@@ -1,0 +1,94 @@
+# random number seed
+seed: 42
+
+# root directory for source data
+# e.g., /data/ML-Raw-Data/FAMLI
+input:
+  # root directory for source data
+  root_dir: /data/ML-Project-Data/FAMLI/Datasets/v9
+  # root directory for source data
+  data_dir: data
+  # filenames for source metadata
+  files:
+    FAMLI2_enrolled: FAMLI2_enrolled_prototype_efw_selected.csv
+    FAMLI2: FAMLI2_prototype_efw_selected.csv
+    FAMLI3: FAMLI3_prototype_efw_selected.csv
+  # data columns to keep, must be common to all files
+  columns:
+    - EFW
+    - EFW_hadlock
+    - ega
+    - GA
+    - GA_hadlock
+    - CRL
+    - BPD
+    - HC
+    - AC
+    - FL
+    - PID
+    - StudyID
+    - Manufacturer
+    - ManufacturerModelName
+    - filename
+    - file_type
+    - version
+    - exam_dir
+    - orig_frames
+    - orig_channels
+    - orig_height
+    - orig_width
+    - scal_frames
+    - scal_channels
+    - scal_height
+    - scal_width
+    - bbox_x0
+    - bbox_y0
+    - bbox_x1
+    - bbox_y1
+    - tag
+
+# output information
+output:
+  # log-normalized columns
+  columns:
+    - AC
+    - HC
+    - BPD
+    - FL
+    - EFW
+    - EFW_hadlock
+    - GA
+    - GA_hadlock
+  # root directory for output data
+  root_dir: /data/ML-Project-Data/FAMLI/Datasets/v9/splits
+  # folder name for saving split csvs
+  folder: EFW_T75_V10_H15
+  # folder for distributions
+  distribution: distributions
+  # folder for this specfic distribution (100%)
+  name: EFW_100
+
+# split information
+# - filenames for train, validation, and test splits
+# - fraction for train anf validation splits
+# - allowable tags for positive, negative
+#   null means do not apply tag filtering
+splits:
+  test:
+    file: test.csv
+    fraction: -1
+    tags:
+      include_biometric: false
+      include_unknown: false
+  val:
+    file: val.csv
+    fraction: 0.1
+    tags:
+      include_biometric: true
+      include_unknown: false
+  train:
+    file: train.csv
+    fraction: 0.75
+    tags:
+      include_biometric: true
+      include_unknown: false

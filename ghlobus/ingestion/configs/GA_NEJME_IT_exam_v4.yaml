@@ -1,0 +1,60 @@
+# source for instance and exam data
+input:
+  dir: /data/ML-Raw-Data/FAMLI/GA_NEJME/
+  instance:
+    file: GA_NEJME_ultrasound_instances.csv
+    threshold: 2
+    columns:
+      study_id: StudyID
+      pid: PID
+      study_id_with_acquisition_source: exam_dir
+      file_path: relpath
+  exam:
+    file: GAEstimationAnalysisStudies_NEJMEvidence.csv
+    columns:
+      study_id: StudyID
+
+# source for CRF data
+crf:
+  dir: /data/ML-Raw-Data/FAMLI/FAMLI2_enrolled/Tabular_data
+  file: FAMLI2_case_report_forms.xlsx
+  sheet: FAMLI2 CRFs
+  columns:
+    pidscan: StudyID
+    us_lie: us_lie
+  lie_none: -88
+  lie_map:
+    1: 0
+    2: 1
+    3: 1
+    4: 1
+    5: 1
+    -88: -88
+
+# output values
+output:
+  dir: /data/ML-Project-Data/FAMLI/Datasets/v0a
+  merged_it_file: merged_instances.csv
+  missing_it_file: missing_instances.csv
+  expected_filenames:
+    Training: prototype_train.csv
+    Tuning: prototype_val.csv
+    Test Sets: prototype_test.csv
+  columns:
+    - PID
+    - StudyID
+    - exam_dir
+    - relpath
+    - filename
+    - file_type
+    - tag
+    - ga_boe
+    - ga_anchor
+    - lie
+    - set_type
+    - preliminary_main_test
+    - preliminary_ivf_test
+    - preliminary_novice_test
+    - main_test
+    - ivf_test
+    - novice_test

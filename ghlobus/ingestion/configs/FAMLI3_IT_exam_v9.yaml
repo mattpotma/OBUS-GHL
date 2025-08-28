@@ -1,0 +1,186 @@
+# Input data
+input:
+  raw_dir: /data/ML-Raw-Data/FAMLI/
+  # name of the project, can be one of the following
+  # FAMLI2_enrolled
+  # FAMLI2
+  # FAMLI3
+  # DXA
+  project: FAMLI3
+
+# information re output data
+output:
+  out_dir: /data/ML-Project-Data/FAMLI/Datasets/v9
+  out_file: FAMLI3_instance_metadata.csv
+
+# filter DICOM videos by number of frames
+min_dicom_frames: 2
+
+# main instance table spreadsheet(s)
+main_IT_file:
+  filename: famli3_it.csv
+  rows: 175857
+  columns:
+    - PID
+    - PIDscan
+    # must convert() PID_date_time to relpath
+    - PID_date_time
+    - Manufacturer
+    - ManufacturerModelName
+    - DeviceSerialNumber
+    - StudyDate
+    - StudyTime
+    # SOPInstanceUID contains filename,
+    # but missing extension, use file instead
+    - file
+    - SOPInstanceUID
+    - StudyInstanceUID
+    - SOPClassUID
+    - NumberOfFrames
+    - Rows
+    - Columns
+    # These conflict with MP4 IT Pixel Spacing
+    # - PixelSpacingX
+    # - PixelSpacingY
+    - tag
+  rename_columns:
+    PIDscan: StudyID
+    PID_date_time: relpath
+    file: filename
+    # PixelSpacingX: PhysicalDeltaX
+    # PixelSpacingY: PhysicalDeltaY
+    inferred_tag: tag
+  duplicate_columns:
+    - StudyID
+    - filename
+  join_columns:
+    - StudyID
+    - Manufacturer
+    - ManufacturerModelName
+  transform_columns:
+    relpath: relpath
+
+# Manufacturer remapping: contains(value) -> key
+manufacturer_map:
+  GE: GE
+  Sonosite: Sonosite
+  Clarius: Clarius
+  Butterfly: Butterfly
+
+# ManufacturerModelName remapping: contains(value) -> key
+manufacturer_model_name_map:
+  Voluson-S: Voluson S
+  iQ: iQ Probe
+  iQ+: iQ+ Probe
+  iQ3: iQ3 Probe
+  Unnamed: Unnamed Probe
+
+# butterfly instance table spreadsheet
+mp4_IT_file:
+  filename: FAMLI3_mp4_IT.csv
+  rows: 50746
+  columns:
+    - file
+    - SequenceOfUltrasoundRegions_PhysicalDeltaX
+    - SequenceOfUltrasoundRegions_PhysicalDeltaY
+  rename_columns:
+    file: filename
+    SequenceOfUltrasoundRegions_PhysicalDeltaX: PhysicalDeltaX
+    SequenceOfUltrasoundRegions_PhysicalDeltaY: PhysicalDeltaY
+
+# exam spreadsheet
+exam_file:
+  filename: FAMLI3_Exam_Data.csv
+  columns:
+    # - PID
+    - StudyID
+    # - us_famscan
+    # - eligible
+    # - edd_date
+    - ega
+    # - sc_date_date
+    # - age
+    # - sc_us_date_date
+    # - sc_us_edd_date
+    # - sc_ht
+    # - sc_wt
+    # - sc_first_wt
+    # - sc_first_anc_date
+    # - lmp_certain
+    # - iugr_priorscan
+    # - us_date_date
+    - us_fh
+    - us_loc
+    - us_twin
+    - us_fhr
+    - us_wks
+    - us_day
+    - us_lie
+    - us_bpa
+    - us_bpb
+    - us_hca
+    - us_hcb
+    - us_aca
+    - us_acb
+    - us_fla
+    - us_flb
+    - us_tcda
+    - us_tcdb
+    - us_efw
+    - us_perc
+    - us_q1
+    - us_q2
+    - us_q3
+    - us_q4
+    - us_dvp_ge
+    - us_plac
+    - us_previa
+    - us_3d
+    - us_dop
+    - us_butter_blind
+    - us_clarius_blind
+    - sonographer
+    - novice
+    - fetut_anom
+    - single_iup
+    - Manufacturer
+    - ManufacturerModelName
+    - NOF
+    - CRL
+    - CRL_var
+    - BPD
+    - BPD_var
+    - HC
+    - HC_var
+    - AC
+    - AC_var
+    - FL
+    - FL_var
+    # - OFD
+    # - TCD
+    # - TKD
+    - GA
+    # - GA_EDD
+    # - GA_EFW
+    # - CUA
+    - EFW
+    - EFW_var
+    - EFWpr
+    - Gpr
+    - LMP
+    # - EDD
+    # - EDD_GA
+    # - EDD_LMP
+    # - EDD_AUA
+    - AFI
+    - AFq1
+    - AFq2
+    - AFq3
+    - AFq4
+    - DVP
+    # - FHR
+    - found_in
+  join_columns:
+    - StudyID
+    - Manufacturer
+    - ManufacturerModelName

@@ -1,0 +1,137 @@
+# random number seed
+seed: 42
+
+# source data
+input:
+  in_dir: /data/ML-Project-Data/FAMLI/Datasets/v9
+  # name of the project
+  # can be one of the following projects
+  # FAMLI2_enrolled
+  # FAMLI2
+  # FAMLI3
+  # DXA
+  project: FAMLI2
+
+# output data
+output:
+  # filenames for output files
+  out_file: FAMLI2_prototype_twin_selected.csv
+  intermediate_file: FAMLI2_prototype_twin_base.csv
+
+# selection parameters
+selection:
+  # this is output label for twins used for ML
+  out_col: TWIN
+  # define twins
+  twins:
+    patients: null
+    include:
+      # these columns will be used to determine twins
+      columns:
+        - us_twin
+        - NOF
+      # these values determine what will be considered twins
+      values:
+        - 2
+        - 3
+      operation: and
+    # this value indicates twins
+    label: 1
+  # everything else is considered as singleton
+  singles:
+    patients: null
+    # this value indicates singletons
+    label: 0
+    # all instances must have a value for these columns
+    # set to null to allow all instances
+    enforce:
+      columns:
+        - GA, ega
+        - tag
+      operation: and
+    # sweep tag filtering
+    tags:
+      # use this column to read sweep tag
+      column: tag
+      # these are valid sweep tags
+      # don't include "unknown" if you are no
+      # also including "biometric" tags
+      include_biometric: true
+      include_unknown: false
+  # exception file lists PIDs to force classify
+  # or exclude from both twins and singles set
+  # use value from column "as is"
+  exception:
+    except_dir: /data/ML-Raw-Data/FAMLI/FAMLI_corrections_GHL
+    filename: FAMLI2_Twins_20250417.csv
+    exclude_label: -99
+
+# instance table spreadsheet
+it_file:
+  filename: FAMLI2_prototype_tag.csv
+  rows: 26418
+  columns:
+    - PID
+    - StudyID
+    # - relpath
+    # - StudyDate
+    - filename
+    - Manufacturer
+    - ManufacturerModelName
+    # - DeviceSerialNumber
+    # - StudyTime
+    # - StudyInstanceUID
+    # - SOPClassUID
+    # - NumberOfFrames
+    # - rows
+    # - columns
+    - tag
+    # - PhysicalDeltaX
+    # - PhysicalDeltaY
+    - file_type
+    - NOF
+    - CRL
+    # - CRL_var
+    - BPD
+    # - BPD_var
+    - HC
+    # - HC_var
+    - AC
+    # - AC_var
+    - FL
+    # - FL_var
+    - GA
+    # - GA_EDD
+    # - GA_LMP
+    # - GA_EFW
+    # - CUA
+    # - EFW
+    # - EFWpr
+    # - Gpr
+    # - LMP
+    # - AFI
+    # - AFq1
+    # - AFq2
+    # - AFq3
+    # - AFq4
+    # - DVP
+    - ega
+    - us_twin
+    # - us_lie
+    # - us_dvp
+    # - found_in
+    # - exam_source
+    - exam_dir
+    - orig_frames
+    - orig_channels
+    - orig_height
+    - orig_width
+    - scal_frames
+    - scal_channels
+    - scal_height
+    - scal_width
+    - bbox_x0
+    - bbox_y0
+    - bbox_x1
+    - bbox_y1
+    - fail_reason

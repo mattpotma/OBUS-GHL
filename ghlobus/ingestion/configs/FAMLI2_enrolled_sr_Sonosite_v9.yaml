@@ -1,0 +1,139 @@
+# root directory for source data
+input:
+  # e.g., /data/ML-Raw-Data/FAMLI
+  raw_dir: /data/ML-Raw-Data/FAMLI
+  # name of the project
+  # can be one of the following projects
+  # FAMLI2_enrolled
+  # FAMLI2
+  # FAMLI3
+  # DXA
+  project: FAMLI2_enrolled
+  # structured reports file name
+  sr_file: FAMLI2_non-DICOM_structured_reports.csv
+
+# output data
+output:
+  # directory to write the output data
+  out_dir: /data/ML-Project-Data/FAMLI/Datasets/v9
+  out_file: FAMLI2_enrolled_Sonosite_Exam_Data.csv
+
+# columns containing critical information
+# if missing in structured reports, set it to null
+# if it should not be used, set it to null
+column_dict:
+  pid: PID
+  studyid: StudyID
+  folder: null
+  manufacturer: Manufacturer
+  tagname: tagname
+  auxiliary: MeasID
+  tagcontent: tagcontent
+  numericvalue: numericvalue
+  datevalue: datevalue
+  derivation: null
+
+# tags of interest for ingestion
+tag_dict:
+  # Multiple Gestations
+  nof:
+    src:
+       - FetusID
+    dst: NOF
+    dtype: content
+  # Biometry
+  gsd:
+    src:
+       - FetalMeasurement, OB_GS
+    dst: GSD
+    dtype: float
+  crl:
+    src:
+       - FetalMeasurement, OB_CRL
+    dst: CRL
+    dtype: float
+  bpd:
+    src:
+       - FetalMeasurement, OB_BPD
+    dst: BPD
+    dtype: float
+  hc:
+    src:
+       - FetalMeasurement, OB_HC
+    dst: HC
+    dtype: float
+  ac:
+    src:
+       - FetalMeasurement, OB_AC
+    dst: AC
+    dtype: float
+  fl:
+    src:
+       - FetalMeasurement, OB_FL
+    dst: FL
+    dtype: float
+  ofd:
+    src:
+       - FetalMeasurement, OB_OFD
+    dst: OFD
+    dtype: float
+  tcd:
+    src:
+      - FetalMeasurement, OB_TCD
+    dst: TCD
+    dtype: float
+  # Age, Weight, and Growth
+  ga_lmp:
+    src:
+       - GAByLMP, GA_BY_LMP
+    dst: GA_LMP
+    dtype: float
+  aua:
+    src:
+       - AverageUltrasoundAge, AUA
+    dst: AUA
+    dtype: float
+  ua:
+    src:
+       - UltrasoundAge
+    dst: UA
+    dtype: float
+  efw:
+    src:
+       - EstimatedFetalWeight, EFW
+    dst: EFW
+    dtype: float
+  lmp:
+    src:
+       - LMP
+       - LastMenstrualPeriod, LMP
+    dst: LMP
+    dtype: date
+  edd:
+    src:
+       - EstabDueDate, EDD
+    dst: EDD
+    dtype: date
+  edd_lmp:
+    src:
+       - EDDbyLMP
+       - EstimatedDateOfDelivery, EDD_BY_LMP
+    dst: EDD_LMP
+    dtype: date
+  edd_aua:
+    src:
+       - EstimatedDateOfDelivery, EDD_BY_AUA
+    dst: EDD_AUA
+    dtype: date
+  # Amniotic Fluid
+  afi:
+    src:
+       - AmnioticFluidMeasurement, OB_AFI
+    dst: AFI
+    dtype: float
+  # Viability
+  fhr:
+    src:
+      - FetalHeartRate, FHR
+    dst: FHR
+    dtype: float

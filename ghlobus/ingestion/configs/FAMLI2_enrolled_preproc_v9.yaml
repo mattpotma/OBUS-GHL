@@ -1,0 +1,50 @@
+# source for instance data
+input:
+  raw_dir: /data/ML-Raw-Data/FAMLI/
+  it_file: FAMLI2_enrolled_instance_metadata.csv
+  # name of the project, can be one of the following
+  # FAMLI2_enrolled
+  # FAMLI2
+  # FAMLI3
+  # DXA
+  project: FAMLI2_enrolled
+
+# information re output data
+# root: root directory for output data
+# folders: subdirectories for output data
+# NOTES:
+#     (1) subfolders should only be listed
+#         if the corresponding write is desired
+#     (2) subfolders not listed will not be created
+#         and the corresponding data will not be written
+#     (3) at least one subfolder must be listed
+output:
+  out_dir: /data/ML-Project-Data/FAMLI/Datasets/v9
+  out_file: FAMLI2_enrolled_prototype.csv
+  folders:
+    raw: frame5
+    jpg: null
+    pt: data
+
+# image parameters
+# image size: size of the output image
+# channels: number of channels in output image
+# dtype: data type of the output image
+# alpha: pixel resolution of the output image
+image:
+  img_size: 288
+  channels: 1
+  dtype: uint8
+  alpha: 0.075
+  min_frames: 50
+  sample_frames: 50
+  doppler_rgb_thresh: 10
+  doppler_ybr_thresh: 100
+  doppler_pixel_thresh: 1000
+  raw_frame_index: 5
+  jpeg_quality: 100
+
+# overall processing parameters
+processing:
+  cores: 48
+  batch_size: 1000

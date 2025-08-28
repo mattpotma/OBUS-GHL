@@ -1,0 +1,86 @@
+seed_everything: true
+name: fp_experiment_e14_test
+output_dir: /workspace/outputs/fp_experiment/results/fp_experiment_e14_test
+ckpt_path: /workspace/outputs/fp_experiment/checkpoints/fp_experiment_e14.ckpt
+trainer:
+  accelerator: gpu
+  precision: 16-mixed
+  devices:
+    - 0
+  callbacks:
+    - class_path: ghlobus.callbacks.ClassificationVideoPredictionWriter
+      init_args:
+        save_dir: null
+        save_plots: true
+        label_col: &LABCOL lie
+        class_names: &CLASSES
+          - cephalic
+          - non-cephalic
+        feature_name: &FNAME FP
+    - class_path: ghlobus.callbacks.ClassificationExamPredictionWriter
+      init_args:
+        save_dir: null
+        save_plots: true
+        default_exam_cols:
+          - exam_dir
+        max_instances_per_exam: null
+        use_known_tag_combos: false
+        class_names: *CLASSES
+        label_col: *LABCOL
+        feature_name: *FNAME
+  logger:
+    - class_path: lightning.pytorch.loggers.wandb.WandbLogger
+      init_args: 
+        name: null
+        save_dir: null
+        project: starter_package_fp
+        entity: ml-ultrasound-team
+        log_model: true
+model:
+  class_path: ghlobus.models.Cnn2RnnClassifier
+  init_args:
+    cnn:
+      class_path: ghlobus.models.TvCnnFeatureMap
+      init_args:
+        cnn_name: MobileNet_V2
+        cnn_weights_name: IMAGENET1K_V2
+        cnn_layer_id: 18
+    rnn:
+      class_path: ghlobus.models.TvConvLSTM
+      init_args:
+        input_size: 1280
+        hidden_size: 512
+        kernel_size: 3
+        num_layers: 1
+        num_groups: 4
+    classifier:
+      class_path: ghlobus.models.MultiClassifier
+      init_args:
+        # must be twice the value of hidden_size above
+        in_features: 1024
+        num_classes: 2
+    lr: null
+    loss:
+      class_path: torch.nn.NLLLoss
+      init_args:
+        reduction: mean
+    report_intermediates: true  # CRITICAL
+data:
+  class_path: ghlobus.data.VideoDataModuleInference
+  init_args:
+    dataset_dir: /data/ML-Project-Data/FAMLI/Datasets/v4
+    distribution: FP_100
+    # data_file_template: '{}.csv'
+    dataset_name: test
+    batch_size: 1
+    num_workers: 16
+    label_cols:
+      - lie
+    path_col: outpath
+    channels: 3
+    image_dims: 256
+    frames_or_channel_first: frames
+    transforms: null
+    filter_ga: null
+    filter_subset: null
+    subsample: null

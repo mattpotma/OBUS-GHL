@@ -1,0 +1,54 @@
+# Source directory containing the NEJM data
+input:
+  # Path to the input NEJM subset CSVs
+  src_dir: /data/ML-Project-Data/FAMLI/Datasets/v4
+
+# Destination directory for the NEJM processed data
+output:
+  # Path to the NEJM data directory
+  dest_dir: /data/ML-Project-Data/FAMLI/Datasets/v4
+  # Distribution directory for the split csvs
+  dist_name: GA_100
+  # Fraction of data to use for this distribution
+  fraction: 1.0
+
+# Data filtering configuration
+filtering:
+  # Label column to filter unwanted samples
+  label: null
+  # Whether to filter based on sweep tags
+  #   no filtering: null
+  #   vertical only: 'vertical'
+  #   vertical plus transverse: 'transverse'
+  # Settings for train/val (dev) and test sets
+  sweeps: null
+  # dev: 'transverse'
+  # test: 'transverse'
+  # Filtering on a continuous feature
+  feature: null
+  #  # Feature column name
+  #  column: null
+  #  # lower bound for the feature
+  #  low: null
+  #  # upper bound for the feature
+  #  high: null
+
+# Data balancing configuration
+balancing:
+  feature: ga_boe
+  # Type of feature (continuous or discrete)
+  type: continuous
+  # Number of bins to use for digitizing the feature
+  nbins: 4
+  # Balance parameters controls the balance using the feature
+  # Can be between 0 and 1. Where
+  #     balance = 0 pure stratified, i.e., matching source distribution
+  #     balance = 1 pure balance, i.e., all distribution bins are equal
+  balance: 0.9
+  # Balance strategy to use for the split
+  # Can be one of 'over', 'under', 'combo', or 'all'
+  #     strategy = 'over' only use oversampling
+  #     strategy = 'under' only use undersampling
+  #     strategy = 'combo' use over- and under-sampling to achieve target count
+  #     strategy = 'all' use all samples without balancing or stratification
+  strategy: combo
