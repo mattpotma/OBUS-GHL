@@ -1,0 +1,133 @@
+seed_everything: 42
+trainer:
+  accelerator: gpu
+  strategy: auto
+  devices: -1
+  num_nodes: 1
+  precision: 16-mixed
+  logger: 
+    - class_path: lightning.pytorch.loggers.wandb.WandbLogger
+      init_args: 
+        name: efw_experiment
+        save_dir: &SAVDIR /workspace/outputs/efw_experiment
+        project: starter_package_efw
+        entity: ml-ultrasound-team
+        log_model: True
+    - class_path: lightning.pytorch.loggers.tensorboard.TensorBoardLogger
+      init_args: 
+        save_dir: *SAVDIR
+  callbacks: 
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        save_top_k: -1
+        every_n_epochs: 1
+        monitor: val_loss
+        filename: "{epoch:03d}_{val_loss:0.4f}"
+    - class_path: lightning.pytorch.callbacks.EarlyStopping
+      init_args:
+        monitor: val_loss
+        mode: min
+        patience: 10
+        verbose: true
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: epoch
+        log_momentum: false
+  fast_dev_run: false
+  max_epochs: 120
+  min_epochs: 25
+  max_steps: -1
+  min_steps: null
+  max_time: null
+  limit_train_batches: null
+  limit_val_batches: null
+  limit_test_batches: null
+  limit_predict_batches: null
+  overfit_batches: 0.0
+  val_check_interval: null
+  check_val_every_n_epoch: 1
+  num_sanity_val_steps: 2
+  log_every_n_steps: null
+  enable_checkpointing: null
+  enable_progress_bar: null
+  enable_model_summary: null
+  accumulate_grad_batches: 1
+  gradient_clip_val: null
+  gradient_clip_algorithm: null
+  deterministic: null
+  benchmark: null
+  inference_mode: true
+  use_distributed_sampler: true
+  profiler: null
+  detect_anomaly: false
+  barebones: false
+  plugins: null
+  sync_batchnorm: false
+  reload_dataloaders_every_n_epochs: 0
+  default_root_dir: *SAVDIR
+ckpt_path: null
+model:
+  class_path: ghlobus.models.Cnn2RnnRegressor
+  init_args:
+    cnn:
+      class_path: ghlobus.models.TvCnn
+      init_args:
+        tv_model_name: MobileNet_V2
+        tv_weights_name: DEFAULT
+    rnn:
+      class_path: ghlobus.models.MultipleAdditiveAttention
+      init_args:
+        input_dim: 1000
+        attention_dim: 16
+        num_modules: 8
+    regressor:
+      class_path: torch.nn.Linear
+      init_args:
+        in_features: 8000
+        out_features: 4
+    lr: null
+    loss:
+      class_path: torch.nn.L1Loss
+      init_args:
+        reduction: mean
+data:
+  class_path: ghlobus.data.VideoDataModuleTraining
+  init_args:
+    dataset_dir: /data/ML-Project-Data/FAMLI/Datasets/v9/splits/EFW_T75_V10_H15
+    distribution: EFW_100
+    # data_file_template: '{}.csv'
+    batch_size: 8
+    num_workers: 4
+    channels: 3
+    frames: 50
+    transforms: []
+    augmentations:
+      - class_path: torchvision.transforms.RandomHorizontalFlip
+        init_args: 
+          p: 0.5
+      - class_path: torchvision.transforms.RandomRotation
+        init_args: 
+          degrees: 45
+    # subsample: null
+    use_stratified_sampler: false
+    use_inference_val_dataset: false
+    label_cols:
+      - log_AC
+      - log_FL
+      - log_HC
+      - log_BPD
+optimizer:
+  class_path: torch.optim.Adam
+  init_args:
+    lr: 5e-5
+    betas:
+    - 0.9
+    - 0.999
+    eps: 1.0e-08
+    weight_decay: 0.0
+    amsgrad: false
+    foreach: null
+    maximize: false
+    capturable: false
+    differentiable: false
+    fused: false

@@ -1,0 +1,80 @@
+seed_everything: true
+name: twin_BAA_experiment_fold3_e25_val
+output_dir: /workspace/outputs/twin_BAA_experiment_fold3/results/twin_BAA_experiment_fold3_e25_val
+ckpt_path: /workspace/outputs/twin_BAA_experiment_fold3/checkpoints/twin_BAA_experiment_fold3_e25.ckpt
+trainer:
+  accelerator: gpu
+  precision: 16-mixed
+  devices:
+    - 0
+  callbacks:
+    - class_path: ghlobus.callbacks.ClassificationVideoPredictionWriter
+      init_args:
+        save_dir: null
+        save_plots: true
+        class_names: &CLASSES
+          - singleton
+          - multiple-gestation
+        label_col: &LABCOL TWIN
+        feature_name: &FNAME TWIN
+    - class_path: ghlobus.callbacks.ClassificationExamPredictionWriter
+      init_args:
+        save_dir: null
+        save_plots: true
+        default_exam_cols:
+          - exam_dir
+        max_instances_per_exam: null
+        use_known_tag_combos: false
+        class_names: *CLASSES
+        label_col: *LABCOL
+        feature_name: *FNAME
+  logger:
+    - class_path: lightning.pytorch.loggers.wandb.WandbLogger
+      init_args:
+        name: null
+        save_dir: null
+        project: starter_package_twin
+        entity: ml-ultrasound-team
+        log_model: true
+model:
+  class_path: ghlobus.models.Cnn2RnnClassifier
+  init_args:
+    cnn:
+      class_path: ghlobus.models.TvCnn
+      init_args:
+        tv_model_name: MobileNet_V2
+        tv_weights_name: DEFAULT
+    rnn:
+      class_path: ghlobus.models.BasicAdditiveAttention
+      init_args:
+        input_dim: &EMBDIM 1000
+        attention_dim: 16
+    classifier:
+      class_path: ghlobus.models.MultiClassifier
+      init_args:
+        in_features: *EMBDIM
+        num_classes: 2
+    lr: null
+    loss:
+      class_path: torch.nn.NLLLoss
+      init_args:
+        reduction: mean
+    report_intermediates: true
+data:
+  class_path: ghlobus.data.VideoDataModuleInference
+  init_args:
+    dataset_dir: /data/ML-Project-Data/FAMLI/Datasets/v9/splits/TWIN_5fold
+    distribution: 3_dd
+    # data_file_template: '{}.csv'
+    dataset_name: val
+    batch_size: 1
+    num_workers: 16
+    label_cols:
+      - TWIN
+    path_col: outpath
+    channels: 3
+    image_dims: 256
+    frames_or_channel_first: frames
+    transforms: null
+    filter_ga: null
+    subsample: null

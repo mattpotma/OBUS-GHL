@@ -1,0 +1,81 @@
+seed_everything: true
+name: twin_iMIL_experiment_fold3_e10_test
+output_dir: /workspace/outputs/twin_iMIL_experiment_fold3/results/twin_iMIL_experiment_fold3_e10_test
+ckpt_path: /workspace/outputs/twin_iMIL_experiment_fold3/checkpoints/twin_iMIL_experiment_fold3_e10.ckpt
+trainer:
+  accelerator: gpu
+  precision: 16-mixed
+  devices:
+    - 1
+  callbacks:
+    - class_path: ghlobus.callbacks.TwinExamPredictionWriter
+      init_args:
+        save_dir: null
+        video_prediction_threshold: null
+        save_plots: true
+        label_col: TWIN
+        class_names:
+          - singleton
+          - multiple
+  logger:
+    - class_path: lightning.pytorch.loggers.wandb.WandbLogger
+      init_args:
+        name: null
+        save_dir: null
+        project: starter_package_twin
+        entity: ml-ultrasound-team
+        log_model: true
+model:
+  class_path: ghlobus.models.Cnn2RnnClassifier
+  init_args:
+    cnn:
+      class_path: ghlobus.models.TvMilCnn
+      init_args:
+        tv_model_name: MobileNet_V2
+        tv_weights_name: IMAGENET1K_V2
+        mil_format: frame
+        pretrained_path: null
+    rnn:
+      class_path: ghlobus.models.MilAttention
+      init_args:
+        input_dim: 1000
+        embedding_dim:
+          - 512
+          - &EMBDIM 256
+        attention_dim: 64
+    classifier:
+      class_path: ghlobus.models.MultiClassifier
+      init_args:
+        in_features: *EMBDIM
+        num_classes: 2
+    lr: null
+    loss:
+      class_path: torch.nn.NLLLoss
+      init_args:
+        reduction: mean
+    report_intermediates: true
+data:
+  class_path: ghlobus.data.ExamDataModuleInference
+  init_args:
+    dataset_dir: /data/ML-Project-Data/FAMLI/Datasets/v9/splits/TWIN_5fold
+    distribution: test_dd
+    # data_file_template: '{}.csv'
+    dataset_name: test
+    transforms: []
+    augmentations: []
+    batch_size: 1
+    num_workers: 16
+    bag_size: 1000
+    mil_format: frame
+    channels: 3
+    image_dims: 256
+    frame_sampling: matern
+    use_known_combos: true
+    random_known_combos: false
+    allow_biometric: false
+    strict_known_combos: false
+    frames_or_channel_first: frames
+    use_stratified_sampler: false
+    use_inference_val_dataset: true
+    upsample: false
+    balance_ga: false

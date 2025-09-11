@@ -1,0 +1,19 @@
+# prototype input
+input:
+  root_dir: /data/ML-Project-Data/FAMLI/Datasets/v9
+  # prototype file source
+  filename: FAMLI3_prototype.csv
+
+# output data
+output:
+  filename: FAMLI3_prototype_tag.csv
+
+# corrected tag file information
+correction:
+  except_dir: /data/ML-Raw-Data/FAMLI/FAMLI_corrections_GHL
+  filename: FAMLI3_tag_corrections_20250707.csv
+  columns:
+    - filename
+    - tag_final
+  rename_columns:
+    tag_final: tag

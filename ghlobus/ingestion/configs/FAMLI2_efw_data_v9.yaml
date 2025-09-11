@@ -1,0 +1,136 @@
+# random number seed
+seed: 42
+
+# source data
+input:
+  in_dir: /data/ML-Project-Data/FAMLI/Datasets/v9
+
+# output data
+output:
+  # filenames for output files
+  out_file: FAMLI2_prototype_efw_selected.csv
+  intermediate_file: FAMLI2_prototype_efw_base.csv
+
+# selection parameters
+selection:
+  # this is boolean filter column used for EFW ML
+  out_col: use_for_efw
+  # exclude file lists PIDs to exclude (TWINS)
+  exclude:
+    exclude_dir: /data/ML-Project-Data/FAMLI/FAMLI_corrections_GHL
+    filename: FAMLI2_Twins_20250417.csv
+    column: FINAL_TWIN
+    values:
+      - 2
+      - 3
+      - -99
+  # all instances must have a value for these columns
+  # set to null to allow all instances
+  enforce:
+    columns:
+      - GA
+      - BPD
+      - BPD_var
+      - HC
+      - HC_var
+      - AC
+      - AC_var
+      - FL
+      - FL_var
+      - EFW
+      - EFW_var
+      - tag
+    operation: and
+  # sweep tag filtering
+  tags:
+    # use this column to read sweep tag
+    column: tag
+    # these are valid sweep tags
+    # don't include "unknown" if you are no
+    # also including "biometric" tags
+    include_biometric: true
+    include_unknown: false
+  # consistency requirement for biometrics and EFW
+  consistency:
+    threshold: 0.1
+    columns:
+      - BPD_var
+      - HC_var
+      - AC_var
+      - FL_var
+      - EFW_var
+    operation: and
+  # error threshold for EFW vs EFW_hadlock
+  # Set to 100 to enable hadlock computation but not filter
+  hadlock_threshold: 0.02
+
+# instance table spreadsheet
+it_file:
+  filename: FAMLI2_prototype_tag.csv
+  rows: 26418
+  columns:
+    - PID
+    - StudyID
+    # - relpath
+    # - StudyDate
+    - filename
+    - Manufacturer
+    - ManufacturerModelName
+    # - DeviceSerialNumber
+    # - StudyTime
+    # - StudyInstanceUID
+    # - SOPClassUID
+    # - NumberOfFrames
+    # - rows
+    # - columns
+    - tag
+    # - PhysicalDeltaX
+    # - PhysicalDeltaY
+    - file_type
+    # - NOF
+    - CRL
+    - CRL_var
+    - BPD
+    - BPD_var
+    - HC
+    - HC_var
+    - AC
+    - AC_var
+    - FL
+    - FL_var
+    - GA
+    # - GA_EDD
+    # - GA_LMP
+    # - GA_EFW
+    # - CUA
+    - EFW
+    - EFW_var
+    - EFWpr
+    - Gpr
+    - LMP
+    # - AFI
+    # - AFq1
+    # - AFq2
+    # - AFq3
+    # - AFq4
+    # - DVP
+    - ega
+    # - us_twin
+    # - us_lie
+    # - us_dvp
+    # - found_in
+    # - exam_source
+    - exam_dir
+    - orig_frames
+    - orig_channels
+    - orig_height
+    - orig_width
+    - scal_frames
+    - scal_channels
+    - scal_height
+    - scal_width
+    - bbox_x0
+    - bbox_y0
+    - bbox_x1
+    - bbox_y1
+    - fail_reason

@@ -1,0 +1,80 @@
+# source directory for CRF data
+input:
+  # root directory for CRF data
+  raw_dir: /data/ML-Raw-Data/FAMLI/
+  # case report forms file name
+  crf_file: famli3_crf.csv
+  # tabular structured reports file name(s)
+  sr_files:
+    - FAMLI3_GE_Exam_Data.csv
+  # name of the project, can be one of the following
+  # FAMLI2_enrolled
+  # FAMLI2
+  # FAMLI3
+  # DXA
+  project: FAMLI3
+
+# output data
+output:
+  # directory to write the output data
+  out_dir: /data/ML-Project-Data/FAMLI/Datasets/v9
+  out_file: FAMLI3_Exam_Data.csv
+
+# columns containing critical information
+# if missing in structured reports, set it to null
+# if should not be used, set it to null
+crf_dict:
+  columns:
+    - PIDscan
+    - PID
+    # - us_famscan
+    # - eligible
+    # - edd_date
+    - ega
+    - sc_date_date
+    - age
+    - sc_us_date_date
+    - sc_us_edd_date
+    - sc_ht
+    - sc_wt
+    - sc_first_wt
+    - sc_first_anc_date
+    - lmp_certain
+    - iugr_priorscan
+    - us_date_date
+    - us_fh
+    - us_loc
+    - us_twin
+    - us_fhr
+    - us_wks
+    - us_day
+    - us_lie
+    - us_bpa
+    - us_bpb
+    - us_hca
+    - us_hcb
+    - us_aca
+    - us_acb
+    - us_fla
+    - us_flb
+    - us_tcda
+    - us_tcdb
+    - us_efw
+    - us_perc
+    - us_q1
+    - us_q2
+    - us_q3
+    - us_q4
+    - us_dvp_ge
+    - us_plac
+    - us_previa
+    - us_3d
+    - us_dop
+    - us_butter_blind
+    - us_clarius_blind
+    - sonographer
+    - novice
+    - fetut_anom
+    - single_iup
+  rename_columns:
+    PIDscan: StudyID

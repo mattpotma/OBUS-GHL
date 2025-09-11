@@ -1,0 +1,77 @@
+seed_everything: true
+name: ga_experiment_e30_test
+output_dir: /workspace/outputs/ga_experiment/results/ga_experiment_e30_test
+ckpt_path: /workspace/outputs/ga_experiment/checkpoints/ga_experiment_e30.ckpt
+trainer:
+  accelerator: gpu
+  precision: 16-mixed
+  devices:
+    - 0
+  callbacks:
+    # skipping VectorWriter for speed reasons.
+    # - class_path: ghlobus.callbacks.CnnVectorWriter
+    #   init_args:
+    #     save_dir: null
+    - class_path: ghlobus.callbacks.GaVideoPredictionWriter
+      init_args:
+        save_dir: null
+        save_plots: true
+    - class_path: ghlobus.callbacks.GaExamPredictionWriter
+      init_args:
+        save_dir: null
+        save_plots: true
+        default_exam_cols:
+          - exam_dir
+        max_instances_per_exam: null
+        use_known_tag_combos: false
+  logger:
+    - class_path: lightning.pytorch.loggers.wandb.WandbLogger
+      init_args: 
+        name: null
+        save_dir: null
+        project: starter_package_ga
+        entity: ml-ultrasound-team
+        log_model: true
+model:
+  class_path: ghlobus.models.Cnn2RnnRegressor
+  init_args:
+    cnn:
+      class_path: ghlobus.models.TvCnn
+      init_args:
+        tv_model_name: EfficientNet_V2_S
+        tv_weights_name: DEFAULT
+    rnn:
+      class_path: ghlobus.models.BasicAdditiveAttention
+      init_args:
+        input_dim: 1000
+        attention_dim: 16
+    regressor:
+      class_path: torch.nn.Linear
+      init_args:
+        in_features: 1000
+        out_features: 1
+    lr: null
+    loss:
+      class_path: torch.nn.L1Loss
+      init_args:
+        reduction: mean
+    report_intermediates: true  # CRITICAL
+data:
+  class_path: ghlobus.data.VideoDataModuleInference
+  init_args:
+    dataset_dir: /data/ML-Project-Data/FAMLI/Datasets/v4
+    distribution: GA_100
+    # data_file_template: '{}.csv'
+    dataset_name: test
+    batch_size: 1
+    num_workers: 96
+    label_cols:
+      - z_log_ga
+    path_col: outpath
+    channels: 3
+    image_dims: 256
+    frames_or_channel_first: frames
+    transforms: null
+    filter_ga: null
+    filter_subset: preliminary_main_test
+    subsample: null

@@ -1,0 +1,80 @@
+seed_everything: true
+name: efw_experiment_e56_test
+output_dir: /workspace/outputs/efw_experiment/results/efw_experiment_e56_test
+ckpt_path: /workspace/outputs/efw_experiment/checkpoints/efw_experiment_e56.ckpt
+trainer:
+  accelerator: gpu
+  precision: 16-mixed
+  devices:
+    - 0
+  callbacks: 
+    # skipping VectorWriter for speed reasons.
+    # - class_path: ghlobus.callbacks.CnnVectorWriter
+    #   init_args:
+    #     save_dir: null
+    - class_path: ghlobus.callbacks.EfwVideoPredictionWriter
+      init_args:
+        save_dir: null
+        save_plots: true
+    - class_path: ghlobus.callbacks.EfwExamPredictionWriter
+      init_args:
+        save_dir: null
+        save_plots: true
+        default_exam_cols:
+          - exam_dir
+        max_instances_per_exam: null
+        use_known_tag_combos: false
+  logger:
+    - class_path: lightning.pytorch.loggers.wandb.WandbLogger
+      init_args: 
+        name: null
+        save_dir: null
+        project: starter_package_efw
+        entity: ml-ultrasound-team
+        log_model: true
+model:
+  class_path: ghlobus.models.Cnn2RnnRegressor
+  init_args:
+    cnn:
+      class_path: ghlobus.models.TvCnn
+      init_args:
+        tv_model_name: MobileNet_V2
+        tv_weights_name: DEFAULT
+    rnn:
+      class_path: ghlobus.models.MultipleAdditiveAttention
+      init_args:
+        input_dim: 1000
+        attention_dim: 16
+        num_modules: 8
+    regressor:
+      class_path: torch.nn.Linear
+      init_args:
+        in_features: 8000
+        out_features: 4
+    lr: null
+    loss:
+      class_path: torch.nn.L1Loss
+      init_args:
+        reduction: mean
+    report_intermediates: true  # CRITICAL
+data:
+  class_path: ghlobus.data.VideoDataModuleInference
+  init_args:
+    dataset_dir: /data/ML-Project-Data/FAMLI/Datasets/v9/splits/EFW_T75_V10_H15
+    distribution: EFW_100
+    # data_file_template: '{}.csv'
+    dataset_name: test
+    batch_size: 1
+    num_workers: 96
+    label_cols:
+      - log_AC
+      - log_FL
+      - log_HC
+      - log_BPD
+    path_col: outpath
+    channels: 3
+    image_dims: 256
+    frames_or_channel_first: frames
+    filter_ga: null
+    filter_subset: null
+    subsample: null

@@ -1,0 +1,187 @@
+# random number seed
+seed: 42
+
+# root directory for source data
+# e.g., /data/ML-Raw-Data/FAMLI
+input:
+  # root directory for source data
+  root_dir: /data/ML-Project-Data/FAMLI/Datasets/v9
+  # root directory for source data
+  data_dir: data
+  # filenames for source metadata
+  files:
+    FAMLI2_enrolled: FAMLI2_enrolled_prototype_twin_selected.csv
+    FAMLI2: FAMLI2_prototype_twin_selected.csv
+    FAMLI3: FAMLI3_prototype_twin_selected.csv
+  # data columns to keep, must be common to all files
+  columns:
+    - TWIN
+    - ega
+    - GA
+    - CRL
+    - BPD
+    - HC
+    - AC
+    - FL
+    - PID
+    - StudyID
+    - Manufacturer
+    - ManufacturerModelName
+    - filename
+    - file_type
+    - version
+    - exam_dir
+    - orig_frames
+    - orig_channels
+    - orig_height
+    - orig_width
+    - scal_frames
+    - scal_channels
+    - scal_height
+    - scal_width
+    - bbox_x0
+    - bbox_y0
+    - bbox_x1
+    - bbox_y1
+    - tag
+
+twin_splits:
+  # root directory for twin split information
+  except_dir: /data/ML-Project-Data/FAMLI/FAMLI_corrections_GHL
+  # filenames for twin split information
+  file: FAMLI_twin_stats_splits.csv
+  # split column
+  columns:
+    - PID
+    - exam_dir
+    - Split
+
+# output information
+output:
+  # root directory for output data
+  root_dir: /data/ML-Project-Data/FAMLI/Datasets/v9/splits
+  # folder for distributions
+  distribution: distributions
+  # folder name for saving split csvs
+  folder: TWIN_5fold
+
+# split information
+# - index: allocation order of splits
+# - filenames for train, validation, test splits
+# - counts for train, validation, test for both TWIN and SINGLE
+# - allowable tags for positive, negative
+#   null means do not apply tag filtering
+splits:
+  test:
+    index: 0
+    file: test.csv
+    counts:
+      0: 400
+      1: null
+    exam_balance:
+      0: true
+      1: false
+    tags:
+      0:
+        include_biometric: false
+        include_unknown: false
+      1:
+        include_biometric: false
+        include_unknown: false
+    instance_balance: false
+  val:
+    index: 1
+    file: val.csv
+    counts:
+      0: 200
+      1: null
+    exam_balance:
+      0: true
+      1: false
+    tags:
+      0:
+        include_biometric: true
+        include_unknown: false
+      1:
+        include_biometric: true
+        include_unknown: false
+    instance_balance: false
+  train:
+    index: 2
+    file: train.csv
+    counts:
+      0: 1200
+      1: null
+    exam_balance:
+      0: true
+      1: false
+    tags:
+      0:
+        include_biometric: true
+        include_unknown: false
+      1:
+        include_biometric: true
+        include_unknown: false
+    instance_balance: true
+
+# cross-validation folds
+# if no K-fold cross-validation, set to 1 or null
+crossval: 5
+
+# target feature for balancing
+target:
+  # name of column in spreadsheet
+  name: TWIN
+  # type of column, continuous or discrete
+  # only discrete is supported at this time
+  type: discrete
+  # for continuous features, specify the number of bins
+  # to discretize the feature (4 bins is usually good),
+  # e.g., [0, 70, 140, 210, 280]
+  # for discrete features, specify the values to keep
+  # and map by enumerating them, e.g., [[1], [2, 3]]
+  # if no mapping is needed, set to null
+  nbins: null
+
+# exam-level sampling/balancing
+exam:
+  # balance between 0 and 1
+  # 0 = purely stratified
+  # 1 = purely balanced
+  # or anything in between
+  # note if the relevant subset requests balancing,
+  # this value cannot be null
+  balance: 0.9
+  # balance strategy
+  # over - use oversampling
+  # under - use undersampling
+  # combo - use combination of over and under sampling
+  # CAUTION: using 'combo' or 'under' with rare target
+  # may omit some (rare) samples
+  strategy: combo
+
+# instance-level sampling/balancing
+instance:
+  # balance between 0 and 1
+  # 0 = purely stratified
+  # 1 = purely balanced
+  # or anything in between
+  # note if the relevant subset requests balancing,
+  # this value cannot be null
+  balance: 0.9
+  # balance strategy
+  # over - use oversampling
+  # under - use undersampling
+  # combo - use combination of over and under sampling
+  # CAUTION: using 'combo' or 'under' with rare target
+  # may omit some (rare) samples
+  strategy: over
+
+# feature for balance or stratification
+# e.g., stratify on gestational age (GA)
+processing:
+  # number of discretization bins
+  nbins: 8
+  # number of histogram bins
+  hbins: 40
+  # constraints on eligible patients for selection

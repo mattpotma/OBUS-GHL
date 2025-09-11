@@ -1,0 +1,202 @@
+# root directory for source data
+input:
+  # e.g., /data/ML-Raw-Data/FAMLI
+  raw_dir: /data/ML-Raw-Data/FAMLI
+  # name of the project
+  # can be one of the following projects
+  # FAMLI2_enrolled
+  # FAMLI2
+  # FAMLI3
+  # DXA
+  project: FAMLI2_enrolled
+  # structured reports file name
+  sr_file: FAMLI2_DICOM_structured_reports.csv
+
+# output data
+output:
+  # directory to write the output data
+  out_dir: /data/ML-Project-Data/FAMLI/Datasets/v9
+  out_file: FAMLI2_enrolled_GE_Clarius_Exam_Data.csv
+
+# columns containing critical information
+# if missing in structured reports, set it to null
+# if it should not be used, set it to null
+column_dict:
+  pid: PID
+  studyid: StudyID
+  folder: null
+  manufacturer: Manufacturer
+  tagname: tagname
+  auxiliary: null
+  tagcontent: tagcontent
+  numericvalue: numericvalue
+  datevalue: datevalue
+  derivation: Derivation
+
+# tags of interest for ingestion
+tag_dict:
+  # Multiple Gestations
+  nof:
+    src:
+       - Number of Fetuses
+    dst: NOF
+    dtype: int
+  # Biometry
+  gsd:
+    src:
+       - Gestational Sac Diameter
+    dst: GSD
+    dtype: float
+  crl:
+    src:
+       - Crown Rump Length
+       - Fetal Crown Rump Length
+    dst: CRL
+    dtype: float
+  bpd:
+    src:
+       - Biparietal Diameter
+    dst: BPD
+    dtype: float
+  hc:
+    src:
+       - Head Circumference
+    dst: HC
+    dtype: float
+  ac:
+    src:
+       - Abdominal Circumference
+    dst: AC
+    dtype: float
+  fl:
+    src:
+       - Femur Length
+    dst: FL
+    dtype: float
+  ofd:
+    src:
+       - Occipital-Frontal Diameter
+    dst: OFD
+    dtype: float
+  tcd:
+    src:
+      - Trans Cerebellar Diameter
+    dst: TCD
+    dtype: float
+  tkd:
+    src:
+      - Transverse Cardiac Diameter
+    dst: TKD
+    dtype: float
+  # Age, Weight, and Growth
+  ga:
+    src:
+       - Gestational Age
+    dst: GA
+    dtype: float
+  ga_edd:
+    src:
+       - Gestational Age by EDD
+    dst: GA_EDD
+    dtype: float
+  ga_lmp:
+    src:
+       - Gestational Age by LMP
+    dst: GA_LMP
+    dtype: float
+  ga_efw:
+    src:
+       - Gestational Age by EFW
+    dst: GA_EFW
+    dtype: float
+  cua:
+    src:
+       - Composite Ultrasound Age
+    dst: CUA
+    dtype: float
+  efw:
+    src:
+       - Estimated Weight
+       - Weight
+    dst: EFW
+    dtype: float
+  efwpr:
+    src:
+       - EFW percentile rank
+    dst: EFWpr
+    dtype: float
+  gpr:
+    src:
+       - Growth Percentile Rank
+    dst: Gpr
+    dtype: float
+  lmp:
+    src:
+       - LMP
+       - Last Menstrual Period
+    dst: LMP
+    dtype: date
+  edd:
+    src:
+       - EDD
+    dst: EDD
+    dtype: date
+  edd_ga:
+    src:
+       - EDD by GA
+    dst: EDD_GA
+    dtype: date
+  edd_lmp:
+    src:
+       - EDD from LMP
+    dst: EDD_LMP
+    dtype: date
+  edd_aua:
+    src:
+       - EDD from average ultrasound age
+    dst: EDD_AUA
+    dtype: date
+  # Amniotic Fluid
+  afi:
+    src:
+       - Amniotic Fluid Index
+    dst: AFI
+    dtype: float
+    method: max
+  afq1:
+    src:
+       - AMNIOTIC FLUID INDEX LEN q1
+    dst: AFq1
+    dtype: float
+    method: max
+  afq2:
+    src:
+       - AMNIOTIC FLUID INDEX LEN q2
+    dst: AFq2
+    dtype: float
+    method: max
+  afq3:
+    src:
+       - AMNIOTIC FLUID INDEX LEN q3
+    dst: AFq3
+    dtype: float
+    method: max
+  afq4:
+    src:
+       - AMNIOTIC FLUID INDEX LEN q4
+    dst: AFq4
+    dtype: float
+    method: max
+  dvp:
+    src:
+       - Max Vertical Pocket
+    dst: DVP
+    dtype: float
+    method: max
+  # Viability
+  fhr:
+    src:
+      - Heart rate
+      - Fetal Heart Rate
+    dst: FHR
+    dtype: float

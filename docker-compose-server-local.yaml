@@ -1,0 +1,21 @@
+services:
+  test:
+    build: .
+    ports:
+      - 6088:8888
+    volumes:
+      - ./:/workspace/code/
+      - /workspace/outputs/:/workspace/outputs/
+      - /mnt/local-array/:/data/
+      - /mnt/:/mnt/
+    tty: true
+    stdin_open: true
+    shm_size: 250G
+    deploy:
+      resources:
+        reservations:
+          memory: 500G
+          devices:
+            - driver: nvidia
+              count: -1
+              capabilities: [gpu]

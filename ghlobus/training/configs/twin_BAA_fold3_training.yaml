@@ -1,0 +1,163 @@
+seed_everything: 42
+trainer:
+  accelerator: gpu
+  strategy: ddp_find_unused_parameters_true
+  devices: -1
+  num_nodes: 1
+  precision: 16-mixed
+  logger:
+    - class_path: lightning.pytorch.loggers.wandb.WandbLogger
+      init_args:
+        name: twin_BAA_experiment_fold3
+        save_dir: &SAVDIR /workspace/outputs/twin_BAA_experiment_fold3
+        project: starter_package_twin
+        entity: ml-ultrasound-team
+        log_model: True
+    - class_path: lightning.pytorch.loggers.tensorboard.TensorBoardLogger
+      init_args:
+        save_dir: *SAVDIR
+  callbacks: 
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        save_top_k: -1
+        every_n_epochs: 1
+        monitor: val_loss
+        filename: "{epoch:03d}_{val_loss:0.4f}_{val_accuracy:0.4f}"
+    - class_path: lightning.pytorch.callbacks.EarlyStopping
+      init_args:
+        monitor: val_loss
+        mode: min
+        patience: 20
+        verbose: True
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: epoch
+        log_momentum: false
+  fast_dev_run: false
+  max_epochs: 100
+  min_epochs: 30
+  max_steps: -1
+  min_steps: null
+  max_time: null
+  limit_train_batches: null
+  limit_val_batches: null
+  limit_test_batches: null
+  limit_predict_batches: null
+  overfit_batches: 0.0
+  val_check_interval: null
+  check_val_every_n_epoch: 1
+  num_sanity_val_steps: null
+  log_every_n_steps: null
+  enable_checkpointing: null
+  enable_progress_bar: null
+  enable_model_summary: null
+  accumulate_grad_batches: 1
+  gradient_clip_val: null
+  gradient_clip_algorithm: null
+  deterministic: null
+  benchmark: null
+  inference_mode: true
+  use_distributed_sampler: true
+  profiler: null
+  detect_anomaly: false
+  barebones: false
+  plugins: null
+  sync_batchnorm: false
+  reload_dataloaders_every_n_epochs: 0
+  default_root_dir: *SAVDIR
+ckpt_path: null
+model:
+  class_path: ghlobus.models.Cnn2RnnClassifier
+  init_args:
+    cnn:
+      class_path: ghlobus.models.TvCnn
+      init_args:
+        tv_model_name: MobileNet_V2
+        tv_weights_name: DEFAULT
+    rnn:
+      class_path: ghlobus.models.BasicAdditiveAttention
+      init_args:
+        input_dim: &EMBDIM 1000
+        attention_dim: 16
+    classifier:
+      class_path: ghlobus.models.MultiClassifier
+      init_args:
+        in_features: *EMBDIM
+        num_classes: 2
+    lr: null
+    loss:
+      class_path: torch.nn.NLLLoss
+      init_args:
+        reduction: mean
+data:
+  class_path: ghlobus.data.VideoDataModuleTraining
+  init_args:
+    dataset_dir: /data/ML-Project-Data/FAMLI/Datasets/v9/splits/TWIN_5fold
+    distribution: 3_dd
+    # data_file_template: '{}.csv'
+    batch_size: 2
+    transforms: []
+    augmentations:
+      - class_path: torchvision.transforms.RandomResizedCrop
+        init_args:
+          size: 256
+          scale:
+          - 0.95
+          - 1.0
+          antialias: true
+      - class_path: torchvision.transforms.RandomHorizontalFlip
+        init_args:
+          p: 0.5
+      - class_path: torchvision.transforms.RandomPerspective
+        init_args:
+          distortion_scale: 0.05
+          p: 0.5
+      - class_path: torchvision.transforms.RandomErasing
+        init_args:
+          p: 0.5
+          scale:
+          - 0.02
+          - 0.33
+          ratio:
+          - 0.3
+          - 3.3
+      - class_path: torchvision.transforms.GaussianBlur
+        init_args:
+          kernel_size: 3
+      - class_path: torchvision.transforms.RandomEqualize
+      - class_path: torchvision.transforms.RandomAutocontrast
+      - class_path: torchvision.transforms.RandomAdjustSharpness
+        init_args:
+          p: 0.5
+          sharpness_factor: 2
+      - class_path: torchvision.transforms.RandomAdjustSharpness
+        init_args:
+          p: 0.5
+          sharpness_factor: 0.5
+    frames: 50
+    channels: 3
+    subsample: null
+    use_stratified_sampler: false
+    use_inference_val_dataset: false
+    label_cols: TWIN
+    path_col: outpath
+    num_workers: 12
+optimizer:
+  class_path: torch.optim.Adam
+  init_args:
+    lr: 0.00002
+    betas:
+    - 0.9
+    - 0.999
+    eps: 1.0e-08
+    weight_decay: 0.01
+    amsgrad: false
+    foreach: null
+    maximize: false
+    capturable: false
+    differentiable: false
+    fused: false
+lr_scheduler:
+  class_path: lightning.pytorch.cli.ReduceLROnPlateau
+  init_args:
+    monitor: val_loss
