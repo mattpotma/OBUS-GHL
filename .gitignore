@@ -1,6 +1,9 @@
 # Project-specific ignores
 checkpoints/
 dicoms/
+tflite_models/
+test_output/
+test_tflite/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
