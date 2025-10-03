@@ -14,7 +14,6 @@ import wandb
 import numpy as np
 import pandas as pd
 
-from collections import defaultdict
 from typing import Any, Tuple, Union, List
 from sklearn.metrics import classification_report
 
@@ -52,8 +51,6 @@ class TwinExamPredictionWriter(BasePredictionWriter):
         Parameters
         ----------
             save_dir : os.PathLike              Directory where the output will be saved.
-            use_threshold : bool                Boolean indicating whether to use a threshold
-                                                for the video-level predictions.
             video_prediction_threshold : float  Threshold value for the video-level
                                                 predictions. Default is 0.45.
             save_plots : bool                   Boolean indicating whether summary plots should

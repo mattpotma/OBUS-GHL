@@ -15,29 +15,33 @@ import os
 import glob
 import yaml
 import torch
-import numpy as np
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 
+from pydicom import dcmread
 from functools import partial
+from collections import defaultdict
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Union, Dict, Optional, Any
 
-from pydicom import dcmread
+from torch.nn import Linear
 from lightning import LightningModule, Trainer
 from lightning.pytorch.loggers.wandb import WandbLogger
 
-from ghlobus.models.Cnn2RnnRegressor import Cnn2RnnRegressor
-from ghlobus.models.Cnn2RnnClassifier import Cnn2RnnClassifier
 from ghlobus.models.TvCnn import TvCnn
-from ghlobus.models.TvCnnFeatureMap import TvCnnFeatureMap
-from ghlobus.utilities.constants import VERY_LARGE_NUMBER
-
-from ghlobus.utilities.data_utils import preprocess_video
-from ghlobus.utilities.data_utils import prepare_frames
-from ghlobus.utilities.sample_utils import inference_subsample
-from ghlobus.utilities.plot_utils import plot_attention_scores
-from ghlobus.utilities.plot_utils import plot_exam_attention_scores
 from ghlobus.utilities.biometry_utils import efw_hadlock_4component
+from ghlobus.utilities.plot_utils import plot_exam_attention_scores
+from ghlobus.utilities.plot_utils import plot_attention_scores
+from ghlobus.utilities.sample_utils import inference_subsample
+from ghlobus.utilities.data_utils import prepare_frames
+from ghlobus.utilities.data_utils import preprocess_video
+from ghlobus.utilities.constants import VERY_LARGE_NUMBER
+from ghlobus.models.TvCnnFeatureMap import TvCnnFeatureMap
+from ghlobus.models.BasicAdditiveAttention import MultipleAdditiveAttention
+from ghlobus.models.Cnn2RnnClassifier import Cnn2RnnClassifier
+from ghlobus.models.Cnn2RnnRegressor import Cnn2RnnRegressor
+
 
 # Useful variables for regression
 # These were computed on the full v4 training set
@@ -82,8 +86,18 @@ def load_Cnn2RnnRegressor_model(modelpath: os.PathLike,
             map_location=f'{device}',
             cnn=TvCnn(tv_model_name=cnn_name, tv_weights_name=weights_name),
         )
+    elif mode == 'EFW':
+        model = Cnn2RnnRegressor.load_from_checkpoint(
+            checkpoint_path=f'{modelpath}',
+            map_location=f'{device}',
+            cnn=TvCnn(tv_model_name=cnn_name, tv_weights_name=weights_name),
+            rnn=MultipleAdditiveAttention(
+                input_dim=1000, attention_dim=16, num_modules=8),
+            regressor=Linear(in_features=8000, out_features=4),
+        )
     else:
         raise ValueError(f"Mode {mode} not recognized.")
+
     # Set the .return_intermediates attribute to 'True', so that .forward() returns
     # all intermediate states of importance (feature vectors, context vectors, attention scores)
     model.report_intermediates = True
@@ -118,7 +132,7 @@ def load_Cnn2RnnClassifier_model(modelpath: os.PathLike,
     model = Cnn2RnnClassifier.load_from_checkpoint(
         checkpoint_path=f'{modelpath}',
         map_location=f'{device}',
-        cnn=TvCnnFeatureMap(cnn_name=cnn_name, 
+        cnn=TvCnnFeatureMap(cnn_name=cnn_name,
                             cnn_weights_name=weights_name,
                             cnn_layer_id=cnn_layer_id),
     )
@@ -144,8 +158,9 @@ def is_loadable_dicom(filename: os.PathLike) -> bool:
         bool:                    True if file was successfully loaded, False otherwise.
     """
     try:
-        with dcmread(filename, stop_before_pixels=True, force=True) as _:
-            return True
+        with dcmread(filename, stop_before_pixels=True, force=True) as dcm:
+            if int(dcm.NumberOfFrames) > 1:
+                return True
     except Exception:
         return False
 
@@ -171,7 +186,8 @@ def get_loadable_dicom_files(directory: os.PathLike) -> List[str]:
 
 def get_dicom_frames(dicompath: os.PathLike,
                      device: str = 'cpu',
-                     mode: str = 'GA') -> torch.Tensor:
+                     mode: str = 'GA',
+                     pdx: float = None) -> torch.Tensor:
     """
     Process the input DICOM and convert the frames into model-ready torch.Tensor.
 
@@ -187,19 +203,24 @@ def get_dicom_frames(dicompath: os.PathLike,
         dicompath (os.PathLike):  Path to the DICOM file.
         device (str):             Device to send the frames to for inference.
         mode (str):               Whether to run in GA or FP mode.
+        pdx (float):              The physical delta X value from the DICOM metadata, or supplied to the function.
 
     Returns:
         torch.Tensor:             The processed frames.
     """
+    is_dicom = is_loadable_dicom(dicompath)
     # stack file-specific information for passing to `preprocess_video` function
     file_info = pd.Series({
         'in_filepath': dicompath,
-        'file_type': 'dcm',
+        'file_type': 'dcm' if is_dicom else 'mp4',
         'project': dicompath.split(os.path.sep)[-3],
         'exam_dir': dicompath.split(os.path.sep)[-2],
         'tag': 'Unknown',
-        'pdx': None,
+        # Note: PDX gets extracted automatically if it is a DICOM, but
+        # must be supplied if it is an MP4
+        'pdx': None if is_dicom else pdx,
     })
+
     # Process DICOM with in-memory ingestion `preprocess_video` function
     frames = preprocess_video(file_info,
                               out_dir=None,
@@ -218,7 +239,7 @@ def get_dicom_frames(dicompath: os.PathLike,
                               )
 
     # Convert frames into model-ready torch.Tensor.
-    if mode.upper() == 'GA':
+    if mode.upper() == 'GA' or mode.upper() == 'EFW':
         frames = prepare_frames(
             frames,
             channels=3,
@@ -264,12 +285,12 @@ def run_inference(model: LightningModule,
     Returns:
         Tuple[np.ndarray]:        The result of the inference.
     """
-    # Create the rescale function for the log GA values
-    rescale_log_ga = get_rescale_log_value_func(lmean, lstd)
     # Pass the data forward through the model
     result = model(X)
     # Detach and convert to numpy all result Tensor values
     if mode.upper() == 'GA':
+        # Create the rescale function for the log GA values
+        rescale_log_ga = get_rescale_log_value_func(lmean, lstd)
         # Unpack the result
         result = detach_and_convert_tensors(model, result)
         y_hat, frame_features, context_vectors, attention_scores = result
@@ -285,6 +306,21 @@ def run_inference(model: LightningModule,
         pred = np.argmax(y_hat, axis=-1)
 
         return pred, y_hat, frame_features, context_vectors, auxiliary_vectors, logits
+    elif mode.upper() == 'EFW':
+        # Unpack the result
+        result = detach_and_convert_tensors(model, result)
+        y_hat, frame_features, context_vectors, attention_scores = result
+        # Rescale the y_hat values to EFW biometric values
+        log_ac, log_fl, log_hc, log_bpd = y_hat
+        # Each biometric is rescaled individually using the BioNormLogRescale class
+        ac_pred = rescale_log_value(log_ac, AC_MEAN, AC_STD)
+        fl_pred = rescale_log_value(log_fl, FL_MEAN, FL_STD)
+        hc_pred = rescale_log_value(log_hc, HC_MEAN, HC_STD)
+        bpd_pred = rescale_log_value(log_bpd, BPD_MEAN, BPD_STD)
+        efw_pred = efw_hadlock_4component(bpd_pred, ac_pred, hc_pred, fl_pred)
+        scaled_y_hat = (ac_pred, fl_pred, hc_pred, bpd_pred, efw_pred)
+        y_hat = (log_ac, log_fl, log_hc, log_bpd)
+        return scaled_y_hat, y_hat, frame_features, context_vectors, attention_scores
     else:
         raise ValueError(f"Mode {mode} not recognized.")
 
@@ -335,7 +371,7 @@ def get_rescale_log_value_func(mean, std):
     Parameters:
         mean (float):  Mean of the log values.
         std (float):   Standard deviation of the log values.
-    
+
     Returns:
         Callable:      Rescale function.
     """
@@ -362,7 +398,8 @@ class PredictionProcessor(ABC):
         float
             The processed value.
         """
-        raise NotImplementedError("Subclasses must implement the `apply` method.")
+        raise NotImplementedError(
+            "Subclasses must implement the `apply` method.")
 
 
 class NormLogRescale(PredictionProcessor):
@@ -421,6 +458,7 @@ class BioNormLogRescale(PredictionProcessor):
     bpd_std : float
         The standard deviation value used for rescaling the biparietal diameter.
     """
+
     def __init__(self,
                  ac_mean: float = AC_MEAN,
                  ac_std: float = AC_STD,
@@ -438,7 +476,7 @@ class BioNormLogRescale(PredictionProcessor):
         self.fl_std = fl_std
         self.bpd_mean = bpd_mean
         self.bpd_std = bpd_std
-    
+
     def apply(self, value: List[float]) -> float:
         """
         Undo normalization and log scaling for the given biometric values and calculate the fetal weight using Hadlock formula.
@@ -504,6 +542,62 @@ def enumerate_dicom_files(dicom: Union[None, List[str]] = None,
         raise ValueError("No DICOM files found!")
     # Return the final list
     return dicomlist
+
+
+def enumerate_mp4_files(mp4: Union[None, List[str]] = None,
+                        examdir: Union[None, str] = None) -> List[str]:
+    """
+    Determine the list of MP4 files to analyze in this script.
+    Two usage cases:
+        mp4 is list of mp4 paths, examdir is None
+        mp4 is None, examdir points to folder of mp4 files.
+
+    Parameters:
+        mp4 (List[str]):      List of MP4 files.
+        examdir (os.PathLike):  Directory containing MP4 files.
+
+    Returns:
+        List[str]:              List of MP4 files.
+    """
+    mp4list = []
+    if mp4:
+        mp4list = [mp4path for mp4path in mp4 if os.path.isfile(
+            mp4path) and mp4path.lower().endswith('.mp4')]
+    elif examdir:
+        files_in_directory = glob.glob(os.path.join(examdir, "*.mp4"))
+        mp4list = [x for x in files_in_directory if os.path.isfile(x)]
+    if len(mp4list) == 0:
+        raise ValueError("No MP4 files found!")
+    return mp4list
+
+
+def enumerate_media_files(files: Union[None, List[str]] = None,
+                          examdir: Union[None, str] = None) -> List[str]:
+    """
+    Combine the lists from enumerate_dicom_files and enumerate_mp4_files.
+    Accepts optional lists of dicom and mp4 files, or a directory to search
+    for both types of files.
+
+    Parameters:
+        files (List[str], optional): List of files.
+        examdir (os.PathLike, optional): Directory containing DICOM
+        and/or MP4 files.
+
+    Returns:
+        List[str]: Combined list of DICOM and MP4 files.
+    """
+    try:
+        dicom_files = enumerate_dicom_files(dicom=files, examdir=examdir)
+    except ValueError:
+        dicom_files = []
+    try:
+        mp4_files = enumerate_mp4_files(mp4=files, examdir=examdir)
+    except ValueError:
+        mp4_files = []
+    combined = dicom_files + mp4_files
+    if len(combined) == 0:
+        raise ValueError("No DICOM or MP4 files found!")
+    return combined
 
 
 def create_output_directories(outdir: os.PathLike, save_vectors: bool, save_plots: bool):
@@ -604,6 +698,7 @@ def video_level_inference(model: LightningModule,
                           mode: str,
                           lmean: float = LGA_MEAN,
                           lstd: float = LGA_STD,
+                          physicalDeltaX: float = None,
                           ) -> dict:
     """
     Run inference on each set of `frames` individually and record the frame
@@ -620,20 +715,23 @@ def video_level_inference(model: LightningModule,
         mode (str):               The mode of the model.
         lmean (float):            The mean of the log values for rescaling.
         lstd (float):             The std of the log values for rescaling.
+        physicalDeltaX (float):   The physical delta X value from the DICOM metadata, or supplied to the function.
 
     Returns:
         dict:                     Dictionary containing the results.
     """
-    results = {
-        'paths': [],
-        f'Predicted Log {label_plot_name}': [],
-        f'Predicted {label_plot_name} ({unit_plot_name})': [],
-        'frame_features': []
-    }
+    results = defaultdict(list)
 
     for dicompath in dicomlist:
         # Step 4a. Prepare the frame data from the DICOM for the model
-        frames = get_dicom_frames(dicompath, device=model.device, mode=mode)
+        frames = get_dicom_frames(
+            dicompath, device=model.device, mode=mode, pdx=physicalDeltaX)
+
+        # If frames is returned as a `None`, skip this DICOM file
+        if frames is None:
+            print(
+                f"Skipping {dicompath} due to empty frames. Inspect video data for issues.")
+            continue
 
         # Step 4b. Perform inference on the data
         with torch.no_grad():
@@ -641,20 +739,36 @@ def video_level_inference(model: LightningModule,
             pred, y_hat, frame_features, context_vectors, attention_scores = \
                 run_inference(model, frames, mode=mode, lmean=lmean, lstd=lstd)
 
-        # Step 4c. Print final outputs:
-        print(f"For input dicom: {dicompath}")
-        print(f"Predicted {label_plot_name} ({unit_plot_name}): {pred}")
-
-        # Step 4d. Record the results and context vector
+        # Step 4c. Record the results and context vector
         results['paths'].append(dicompath)
-        results[f'Predicted Log {label_plot_name}'].append(y_hat)
-        results[f'Predicted {label_plot_name} ({unit_plot_name})'].append(pred)
+        if mode.upper() == 'GA':
+            results[f'Predicted Log {label_plot_name}'].append(y_hat)
+            results[f'Predicted {label_plot_name} ({unit_plot_name})'].append(
+                pred)
+            pred_to_print = pred
+        elif mode.upper() == 'EFW':
+            results[f'Predicted Log AC'].append(y_hat[0])
+            results[f'Predicted Log FL'].append(y_hat[1])
+            results[f'Predicted Log HC'].append(y_hat[2])
+            results[f'Predicted Log BPD'].append(y_hat[3])
+            results[f'Predicted AC (mm)'].append(pred[0])
+            results[f'Predicted FL (mm)'].append(pred[1])
+            results[f'Predicted HC (mm)'].append(pred[2])
+            results[f'Predicted BPD (mm)'].append(pred[3])
+            results[f'Predicted {mode} ({unit_plot_name})'].append(pred[4])
+            pred_to_print = pred[4]
         results['frame_features'].append(frame_features)
+
+        # Step 4d. Print final outputs:
+        print(f"For input dicom: {dicompath}")
+        # noinspection PyUnboundLocalVariable
+        print(
+            f"Predicted {label_plot_name} ({unit_plot_name}): {pred_to_print}")
 
         # Step 4e. Save output vectors
         if save_vectors:
             save_intermediate_vectors(outdir,
-                                      dicompath,
+                                      os.path.basename(dicompath),
                                       frame_features,
                                       context_vectors,
                                       attention_scores)
@@ -666,9 +780,12 @@ def video_level_inference(model: LightningModule,
             # Plot and save softmax-ed attention
             fig = plot_attention_scores(
                 attention_scores, video_name)
+            # Check the output directory exists
+            os.makedirs(os.path.join(outdir, 'plots'), exist_ok=True)
             # Save the figure
             outpath = os.path.join(outdir, 'plots', f'{video_name}.png')
             fig.savefig(outpath)
+            plt.close(fig)
 
     return results
 
@@ -679,6 +796,7 @@ def video_level_inference_FP(model: LightningModule,
                              save_vectors: bool,
                              lmean: float = LGA_MEAN,
                              lstd: float = LGA_STD,
+                             physicalDeltaX: float = None,
                              ) -> dict:
     """
     Run inference on each set of `frames` individually and record the frame
@@ -691,6 +809,8 @@ def video_level_inference_FP(model: LightningModule,
         save_vectors (bool):      Flag to save vectors.
         lmean (float):            The mean of the log values for rescaling.
         lstd (float):             The std of the log values for rescaling.
+        physicalDeltaX (float):   The physical delta X value (pixel spacing) from
+                                  the DICOM metadata, or supplied to the function.
 
     Returns:
         dict:                     Dictionary containing the results.
@@ -707,7 +827,8 @@ def video_level_inference_FP(model: LightningModule,
 
     for dicompath in dicomlist:
         # Step 4a. Prepare the frame data from the DICOM for the model
-        frames = get_dicom_frames(dicompath, model.device, mode='FP')
+        frames = get_dicom_frames(
+            dicompath, model.device, mode='FP', pdx=physicalDeltaX)
 
         # Step 4b. Perform inference on the data
         with torch.no_grad():
@@ -731,7 +852,7 @@ def video_level_inference_FP(model: LightningModule,
         # Step 4e. Save output vectors
         if save_vectors:
             save_intermediate_vectors(outdir,
-                                      dicompath,
+                                      os.path.basename(dicompath),
                                       frame_features,
                                       context_vectors,
                                       auxiliary_vectors)
@@ -801,41 +922,70 @@ def exam_level_inference(model: LightningModule,
             all_frame_features)
         y_hat = model.regressor(context_vector)
 
+    # Detach the parameters, as before:
+    output = [y_hat, context_vector, attention_scores]
+
+    # Detach and convert to numpy all result Tensor values
+    output = detach_and_convert_tensors(model, output)
+
+    # Set the exam name from the first video path
+    example_path = results['paths'][0]
+    exam_name = os.path.dirname(example_path)
+    results['paths'].append(f"Exam {exam_name}")
+
     if mode == 'GA':
         # Create the rescale function for the log GA values
         rescale_log_ga = get_rescale_log_value_func(lmean, lstd)
 
-        # Detach the parameters, as before:
-        result = [y_hat, context_vector, attention_scores]
-
-        # Detach and convert to numpy all result Tensor values
-        result = detach_and_convert_tensors(model, result)
-
         # Unpack the values again
-        y_hat, context_vector, attention_scores = result
+        y_hat, context_vector, attention_scores = output
 
         # Rescale the predicted value, y_hat
         y_hat_days = rescale_log_ga(y_hat)
+
+        # Extract the y_hat and y_hat_days items
+        y_hat = y_hat.item()
+        y_hat_days = y_hat_days.item()
+        # Set the result to be printed
+        print_result = y_hat_days
+        # Step 4d. Record the results and context vector
+
+        results[f'Predicted Log {label_plot_name}'].append(y_hat)
+        results[f'Predicted {label_plot_name} ({unit_plot_name})'].append(
+            y_hat_days)
+    elif mode == 'EFW':
+        # Unpack the values again
+        y_hat, context_vector, attention_scores = output
+        # Rescale the y_hat values to EFW biometric values
+        log_ac, log_fl, log_hc, log_bpd = y_hat[0]
+        # Each biometric is rescaled individually using the BioNormLogRescale class
+        ac_pred = rescale_log_value(log_ac, AC_MEAN, AC_STD)
+        fl_pred = rescale_log_value(log_fl, FL_MEAN, FL_STD)
+        hc_pred = rescale_log_value(log_hc, HC_MEAN, HC_STD)
+        bpd_pred = rescale_log_value(log_bpd, BPD_MEAN, BPD_STD)
+        efw_pred = efw_hadlock_4component(bpd_pred, ac_pred, hc_pred, fl_pred)
+
+        # Set the result to be printed
+        print_result = efw_pred
+        # Save the results to the results dictionary
+        results[f'Predicted Log AC'].append(log_ac.item())
+        results[f'Predicted Log FL'].append(log_fl.item())
+        results[f'Predicted Log HC'].append(log_hc.item())
+        results[f'Predicted Log BPD'].append(log_bpd.item())
+        results[f'Predicted AC (mm)'].append(ac_pred.item())
+        results[f'Predicted FL (mm)'].append(fl_pred.item())
+        results[f'Predicted HC (mm)'].append(hc_pred.item())
+        results[f'Predicted BPD (mm)'].append(bpd_pred.item())
+        results[f'Predicted {mode} ({unit_plot_name})'].append(efw_pred.item())
     else:
         raise ValueError(f"Mode {mode} not recognized.")
 
-    # Extract the y_hat and y_hat_days items
-    y_hat = y_hat.item()
-    y_hat_days = y_hat_days.item()
-
-    # Step 4c. Print final outputs:
-    example_path = results['paths'][0]
-    exam_name = os.path.dirname(example_path)
+    # Step 5. Print final outputs:
     print("\n")
     print(f"Exam Level Prediction for {exam_name}")
-    print(f"Predicted {label_plot_name}  ({unit_plot_name}): {y_hat_days}")
+    print(f"Predicted {label_plot_name}  ({unit_plot_name}): {print_result}")
 
-    # Step 4d. Record the results and context vector
-    results['paths'].append(f"Exam {exam_name}")
-    results[f'Predicted Log {label_plot_name}'].append(y_hat)
-    results[f'Predicted {label_plot_name} ({unit_plot_name})'].append(y_hat_days)
-
-    # Step 4e. Save attention vector plots
+    # Step 6. Save attention vector plots
     if save_plots:
         # Get the video_names prepared
         video_names = [os.path.basename(x) for x in results['paths']]
@@ -887,13 +1037,13 @@ def exam_level_inference_FP(results: dict,
     print("\n")
     print(f"Exam Level Prediction for {exam_name}")
     print(f"Predicted presentation: {presentation}")
-    
+
     # Step 4d. Record the results and context vector
     results['paths'].append(f"Exam {exam_name}")
     results['Predicted presentation'].append(exam_label)
     results['logits'].append(exam_logits)
     results['softmax_output'].append(exam_probs)
-    
+
     return results
 
 
