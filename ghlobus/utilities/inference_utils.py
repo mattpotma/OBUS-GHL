@@ -897,8 +897,7 @@ def exam_level_inference_FP(results: dict,
     return results
 
 
-def write_results(results: dict,
-                  outdir: os.PathLike) -> None:
+def write_results(results: dict, outdir: os.PathLike) -> None:
     """
     Converts a dictionary in a Pandas DataFrame-ready format to a DataFrame,
     then saves it to the output directory as 'results.csv' without the index

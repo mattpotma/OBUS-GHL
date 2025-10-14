@@ -13,6 +13,7 @@ import os
 import numpy as np
 import time
 
+import torch
 import tensorflow as tf
 
 from ghlobus.utilities.inference_utils import (
@@ -46,13 +47,14 @@ def load_tflite_model(tflite_path: str):
     return interpreter
 
 
-def tflite_inference(interpreter, input_data):
+def tflite_inference(interpreter, input_data, seq_length=None):
     """
     Run inference using TensorFlow Lite interpreter.
 
     Args:
         interpreter: TFLite interpreter
         input_data: Input numpy array (float32)
+        seq_length: Optional sequence length for variable length models
 
     Returns:
         numpy array: Model output (prediction)
@@ -62,6 +64,38 @@ def tflite_inference(interpreter, input_data):
     # Get input and output details
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
+    print(f"Input details: {input_details}")
+    print(f"Output details: {output_details}")
+
+    # Get input shape
+    input_shape = input_details[0]["shape"]
+    print(f"Model expects input shape: {input_shape}")
+
+    model_sequence_length = input_shape[1]
+    data_sequence_length = input_data.shape[1]
+
+    if model_sequence_length > data_sequence_length:
+        # Reflict the data and concatenate to the right length
+        pad_length = model_sequence_length - data_sequence_length
+        print(f"Padding input data from {data_sequence_length} to {model_sequence_length}")
+        input_data_reverse = input_data[:, ::-1, :, :, :]
+        num_repeats = (pad_length // data_sequence_length) + 1
+        pad_data = np.concatenate([input_data_reverse] * num_repeats, axis=1)
+        pad_data = pad_data[:, :pad_length, :, :, :]
+        input_data = np.concatenate([input_data, pad_data], axis=1)
+        print(f"Padded input shape: {input_data.shape}")
+        # Zero pad to the right length
+        # pad_length = model_sequence_length - data_sequence_length
+        # print(f"Padding input data from {data_sequence_length} to {model_sequence_length}")
+        # pad_data = np.zeros((input_data.shape[0], pad_length, input_data.shape[2], input_data.shape[3], input_data.shape[4]), dtype=input_data.dtype)
+        # input_data = np.concatenate((pad_data, input_data), axis=1)
+        # print(f"Padded input shape: {input_data.shape}")
+    elif model_sequence_length < data_sequence_length:
+        # Regularly sample to the right length
+        print(f"Truncating input data from {data_sequence_length} to {model_sequence_length}")
+        indices = np.linspace(0, data_sequence_length - 1, model_sequence_length).astype(int)
+        input_data = input_data[:, indices, :, :, :]
+        print(f"Truncated input shape: {input_data.shape}")
 
     # Convert input to the expected type (UINT8 as expected by the model)
     if input_details[0]["dtype"] == np.uint8:
@@ -72,6 +106,12 @@ def tflite_inference(interpreter, input_data):
 
     # Set input tensor
     interpreter.set_tensor(input_details[0]["index"], input_quantized)
+
+    # Set sequence length tensor if this is a variable length model
+    if len(input_details) > 1 and seq_length is not None:
+        seq_length_tensor = np.array([seq_length], dtype=np.int64)
+        interpreter.set_tensor(input_details[1]["index"], seq_length_tensor)
+        print(f"Set sequence length: {seq_length}")
 
     # Run inference
     interpreter.invoke()
@@ -86,7 +126,7 @@ def tflite_inference(interpreter, input_data):
 
 
 def video_level_inference_tflite(
-    interpreter, dicomlist, outdir, lmean=LGA_MEAN, lstd=LGA_STD
+    interpreter, dicomlist, outdir, lmean=LGA_MEAN, lstd=LGA_STD, sequence_length=None
 ):
     """
     Run TFLite inference on each DICOM file individually.
@@ -116,14 +156,33 @@ def video_level_inference_tflite(
         # Step 1: Prepare frames from DICOM
         # Note: get_dicom_frames returns torch.Tensor (uint8), we need to convert to numpy
         frames_torch = get_dicom_frames(dicompath, device="cpu", mode="GA")
+        # Input shape: (1, 110, 3, 256, 256)
+
+        # Remember original sequence length before padding
+        original_seq_length = frames_torch.shape[1]
+
+        if sequence_length is not None and frames_torch.shape[1] > sequence_length:
+            frames_torch = frames_torch[:, :sequence_length, :, :, :]
+            original_seq_length = sequence_length
+
+        if sequence_length is not None and frames_torch.shape[1] < sequence_length:
+            # Zero pad to the right length
+            pad_length = sequence_length - frames_torch.shape[1]
+            pad_tensor = torch.zeros(
+                (1, pad_length, 3, 256, 256), dtype=frames_torch.dtype
+            )
+            frames_torch = torch.cat((frames_torch, pad_tensor), dim=1)
+
         frames_numpy = (
             frames_torch.detach().cpu().numpy()
         )  # Keep original dtype (uint8)
 
         print(f"Input shape: {frames_numpy.shape}")
+        print(f"Original sequence length: {original_seq_length}")
 
         # Step 2: Run TFLite inference
-        y_hat_log = tflite_inference(interpreter, frames_numpy)
+        # Pass actual sequence length for variable length models (before padding)
+        y_hat_log = tflite_inference(interpreter, frames_numpy, original_seq_length)
 
         # Step 3: Convert log prediction to days
         y_hat_days = rescale_log_ga(y_hat_log)
@@ -172,7 +231,7 @@ def GA_TASK_tflite(args, dicomlist, lmean, lstd):
 
     # Run video-level inference
     results = video_level_inference_tflite(
-        interpreter, dicomlist, args.outdir, lmean=lmean, lstd=lstd
+        interpreter, dicomlist, args.outdir, lmean=lmean, lstd=lstd, sequence_length=args.sequence_length
     )
 
     return results
@@ -243,6 +302,12 @@ def main():
         default="unified_model.tflite",
         type=str,
         help="Name of the TFLite model file to use. Default is 'unified_model.tflite'.",
+    )
+    parser.add_argument(
+        "--sequence_length",
+        default=None,
+        type=int,
+        help="Optional sequence length to pad/truncate input frames to. Default is None (use all frames).",
     )
 
     # Specify the input options for the input files or directories.
