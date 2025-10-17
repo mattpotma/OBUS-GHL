@@ -21,7 +21,6 @@ from ghlobus.utilities.inference_utils import (
     create_output_directories,
     write_results,
     get_dicom_frames,
-    get_rescale_log_value_func,
     LGA_MEAN,
     LGA_STD,
 )
@@ -116,8 +115,8 @@ def tflite_inference(interpreter, input_data, seq_length=None):
     # Run inference
     interpreter.invoke()
 
-    # Get output tensor - use output index 2 which is the scalar prediction
-    output_data = interpreter.get_tensor(output_details[2]["index"])
+    # Get output tensor - the rescaled prediction in days is at index 3
+    output_data = interpreter.get_tensor(output_details[3]["index"])
 
     end = time.time()
     print(f"TFLite inference time: {end - start:.4f} seconds")
@@ -143,12 +142,8 @@ def video_level_inference_tflite(
     """
     results = {
         "paths": [],
-        "Predicted Log Gestational Age": [],
         "Predicted Gestational Age (Days)": [],
     }
-
-    # Create rescale function
-    rescale_log_ga = get_rescale_log_value_func(lmean, lstd)
 
     for dicompath in dicomlist:
         print(f"Processing: {dicompath}")
@@ -182,26 +177,19 @@ def video_level_inference_tflite(
 
         # Step 2: Run TFLite inference
         # Pass actual sequence length for variable length models (before padding)
-        y_hat_log = tflite_inference(interpreter, frames_numpy, original_seq_length)
+        y_hat_days = tflite_inference(interpreter, frames_numpy, original_seq_length)
 
-        # Step 3: Convert log prediction to days
-        y_hat_days = rescale_log_ga(y_hat_log)
-
-        # Step 4: Extract scalar values (handle different output shapes)
-        if y_hat_log.size > 1:
-            y_hat_log_scalar = float(np.mean(y_hat_log))
+        # Step 3: Extract scalar values (handle different output shapes)
+        if y_hat_days.size > 1:
             y_hat_days_scalar = float(np.mean(y_hat_days))
         else:
-            y_hat_log_scalar = float(y_hat_log.item())
             y_hat_days_scalar = float(y_hat_days.item())
 
-        # Step 5: Print results
-        print(f"Predicted Log GA: {y_hat_log_scalar:.4f}")
+        # Step 4: Print results
         print(f"Predicted GA (Days): {y_hat_days_scalar:.2f}")
 
-        # Step 6: Store results
+        # Step 5: Store results
         results["paths"].append(dicompath)
-        results["Predicted Log Gestational Age"].append(y_hat_log_scalar)
         results["Predicted Gestational Age (Days)"].append(y_hat_days_scalar)
 
     return results

@@ -26,6 +26,23 @@ DEFAULT_OUTDIR = "./test_output/"
 ALLOWED_TASKS = ["GA", "GA_FRAMEWISE", "FP"]
 
 
+class ModelWithRescaling(nn.Module):
+    """Wrapper that adds log->days rescaling to model output."""
+
+    def __init__(self, base_model, lga_mean=LGA_MEAN, lga_std=LGA_STD):
+        super().__init__()
+        self.base_model = base_model
+        self.register_buffer('lga_mean', torch.tensor(lga_mean, dtype=torch.float32))
+        self.register_buffer('lga_std', torch.tensor(lga_std, dtype=torch.float32))
+
+    def forward(self, frames):
+        result = self.base_model(frames)
+        y_hat_log, frame_features, context_vector, attention_scores = result
+        y_hat_days = torch.exp((y_hat_log * self.lga_std) + self.lga_mean)
+
+        return frame_features, attention_scores, y_hat_days, context_vector
+
+
 class BasicAdditiveAttentionWithMasking(nn.Module):
     """
     Modified BasicAdditiveAttention that properly handles variable length sequences
@@ -82,11 +99,15 @@ class OptimizedVariableLengthModel(nn.Module):
     More memory-efficient version that processes frames sequentially.
     Better for mobile deployment with limited memory.
     """
-    
-    def __init__(self, original_model, max_sequence_length=100):
+
+    def __init__(self, original_model, max_sequence_length=100, lga_mean=LGA_MEAN, lga_std=LGA_STD):
         super().__init__()
         self.max_sequence_length = max_sequence_length
-        
+
+        # Store normalization parameters as buffers (not trainable, but part of model state)
+        self.register_buffer('lga_mean', torch.tensor(lga_mean, dtype=torch.float32))
+        self.register_buffer('lga_std', torch.tensor(lga_std, dtype=torch.float32))
+
         # Extract components
         self.preprocess = original_model.cnn.preprocess
         self.cnn = original_model.cnn
@@ -98,7 +119,7 @@ class OptimizedVariableLengthModel(nn.Module):
             input_dim=1000,
             attention_dim=16
         )
-        
+
         # Copy weights
         if hasattr(original_model, 'rnn'):
             self.attention.linear_in.load_state_dict(
@@ -107,7 +128,7 @@ class OptimizedVariableLengthModel(nn.Module):
             self.attention.linear_out.load_state_dict(
                 original_model.rnn.linear_out.state_dict()
             )
-        
+
         self.regressor = original_model.regressor
     
 
@@ -136,14 +157,16 @@ class OptimizedVariableLengthModel(nn.Module):
         features = features * mask.float()
 
         context_vector, attention_weights = self.attention(features)#, seq_length)
-        output = self.regressor(context_vector)
+        output_log = self.regressor(context_vector)
         # Squeeze to remove extra dimension like the original model does
-        output = output.squeeze()
+        output_log = output_log.squeeze()
+
+        # Rescale from log GA pred to days
+        output_days = torch.exp((output_log * self.lga_std) + self.lga_mean)
 
         # Return same structure as original model with report_intermediates=True
         # (y_hat, frame_features, context, attention)
-        # Reorder so index 2 contains the scalar prediction (what inference code expects)
-        return features, attention_weights, output, context_vector
+        return features, attention_weights, output_days, context_vector
 
 
 def export(args):
@@ -174,7 +197,11 @@ def GA_TASK_EXPORT(args, dicomlist):
         dicomlist (list[str]):      List of DICOM file paths to analyze.
     """
     # Load Cnn2RnnRegressor model for GA task
-    model = load_Cnn2RnnRegressor_model(args.modelpath, args.device, args.cnn_name)
+    base_model = load_Cnn2RnnRegressor_model(args.modelpath, args.device, args.cnn_name)
+
+    # Use mdoel wrapper with log GA -> days rescaling
+    model = ModelWithRescaling(base_model, LGA_MEAN, LGA_STD)
+    model.eval()
     print(model)
 
     dicompath = dicomlist[0]
@@ -193,7 +220,7 @@ def GA_TASK_EXPORT(args, dicomlist):
         pad_tensor = torch.zeros((frames.shape[0], pad_length, c, h, w), device=args.device)
         frames = torch.cat((frames, pad_tensor), dim=1)
 
-    edge_model = ai_edge_torch.convert(model.eval(), (frames,))
+    edge_model = ai_edge_torch.convert(model, (frames,))
 
     print(edge_model)
     print("Exporting...")
@@ -203,7 +230,7 @@ def GA_TASK_EXPORT(args, dicomlist):
 
     print(f"Exporting model with optimization: {tf.lite.Optimize.DEFAULT}...")
     quantized_model = ai_edge_torch.convert(
-        model.eval(),
+        model,
         (frames,),
         _ai_edge_converter_flags={"optimizations": [tf.lite.Optimize.DEFAULT]},
     )
@@ -219,7 +246,7 @@ def GA_TASK_EXPORT_FRAMEWISE(args, dicomlist):
     model.eval()
 
     batch_size = 1
-    sample_frames = torch.randn(batch_size, max_sequence_length, 3, 256, 256)
+    sample_frames = torch.randint(0, 255, (batch_size, max_sequence_length, 3, 256, 256), dtype=torch.uint8).float()
     sample_seq_length = torch.tensor([max_sequence_length], dtype=torch.long)
 
     print(f"Exporting model with max sequence length {max_sequence_length}...")
