@@ -1,6 +1,7 @@
 """Export to TFLite."""
 
 import argparse
+from pathlib import Path
 import tensorflow as tf
 import torch
 import torch.nn as nn
@@ -40,7 +41,7 @@ class ModelWithRescaling(nn.Module):
         y_hat_log, frame_features, context_vector, attention_scores = result
         y_hat_days = torch.exp((y_hat_log * self.lga_std) + self.lga_mean)
 
-        return frame_features, attention_scores, y_hat_days, context_vector
+        return y_hat_days
 
 
 class BasicAdditiveAttentionWithMasking(nn.Module):
@@ -224,8 +225,12 @@ def GA_TASK_EXPORT(args, dicomlist):
 
     print(edge_model)
     print("Exporting...")
-    tflite_filename = f"tflite_models/unified_model_{args.sequence_length}.tflite"
-    edge_model.export(tflite_filename)
+
+    output_dir = Path("tflite_models")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    tflite_filename = output_dir / f"unified_model_{args.sequence_length}.tflite"
+    edge_model.export(str(tflite_filename))
     print(f"TFLite model saved to {tflite_filename}")
 
     print(f"Exporting model with optimization: {tf.lite.Optimize.DEFAULT}...")
@@ -234,9 +239,8 @@ def GA_TASK_EXPORT(args, dicomlist):
         (frames,),
         _ai_edge_converter_flags={"optimizations": [tf.lite.Optimize.DEFAULT]},
     )
-    quantized_tflite_filename = f"tflite_models/unified_model_opt_{args.sequence_length}.tflite"
-    quantized_model.export(quantized_tflite_filename)
-    print(f"TFLite model saved to {tflite_filename}")
+    quantized_tflite_filename = output_dir / f"unified_model_opt_{args.sequence_length}.tflite"
+    quantized_model.export(str(quantized_tflite_filename))
     print(f"Quantized TFLite model saved to {quantized_tflite_filename}")
 
 def GA_TASK_EXPORT_FRAMEWISE(args, dicomlist):

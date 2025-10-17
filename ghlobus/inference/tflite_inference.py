@@ -115,8 +115,7 @@ def tflite_inference(interpreter, input_data, seq_length=None):
     # Run inference
     interpreter.invoke()
 
-    # Get output tensor - the rescaled prediction in days is at index 3
-    output_data = interpreter.get_tensor(output_details[3]["index"])
+    output_data = interpreter.get_tensor(output_details[0]["index"])
 
     end = time.time()
     print(f"TFLite inference time: {end - start:.4f} seconds")
