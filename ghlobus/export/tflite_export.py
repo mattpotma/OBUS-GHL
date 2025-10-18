@@ -229,7 +229,7 @@ def GA_TASK_EXPORT(args, dicomlist):
     output_dir = Path("tflite_models")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    tflite_filename = output_dir / f"unified_model_{args.sequence_length}.tflite"
+    tflite_filename = output_dir / f"ghlobus_ga_model_{args.sequence_length}.tflite"
     edge_model.export(str(tflite_filename))
     print(f"TFLite model saved to {tflite_filename}")
 
@@ -239,7 +239,7 @@ def GA_TASK_EXPORT(args, dicomlist):
         (frames,),
         _ai_edge_converter_flags={"optimizations": [tf.lite.Optimize.DEFAULT]},
     )
-    quantized_tflite_filename = output_dir / f"unified_model_opt_{args.sequence_length}.tflite"
+    quantized_tflite_filename = output_dir / f"ghlobus_ga_model_opt_{args.sequence_length}.tflite"
     quantized_model.export(str(quantized_tflite_filename))
     print(f"Quantized TFLite model saved to {quantized_tflite_filename}")
 

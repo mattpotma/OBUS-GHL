@@ -253,11 +253,7 @@ def preprocess_video(file_info: pd.Series,
     # Input file exists, look for output file
     if pt is not None:
         # For ingestion_v4, pt will be "", a blank string (not None)
-        pt_path = os.path.join(out_dir,
-                               pt,
-                               project,
-                               exam_dir,
-                               file_base_name + '.pt')
+        pt_path = os.path.join(out_dir, pt, project, exam_dir, file_base_name + '.pt')
 
     # Image size as tuple
     final_dims = (img_size,) * 2
@@ -301,7 +297,8 @@ def preprocess_video(file_info: pd.Series,
             doppler_ybr_thresh=doppler_ybr_thresh,
             doppler_pixel_thresh=doppler_pixel_thresh,
             min_frames=min_frames,
-            return_status=True)
+            return_status=True,
+        )
 
         # Something went wrong with frame extraction
         if frames is None:
@@ -455,18 +452,11 @@ def preprocess_video(file_info: pd.Series,
 
         # Write #RAW_FRAME_INDEX frame of the video as PNG?
         if raw is not None and frame5 is not None:
-            write_frame5(frame5,
-                         out_dir,
-                         raw,
-                         project,
-                         exam_dir,
-                         file_base_name,
-                         reason=None)
+            write_frame5(frame5, out_dir, raw, project, exam_dir, file_base_name, reason=None)
 
         # Write individual frames of the video as JPGs?
         if jpg is not None and frames is not None:
-            jpg_path = os.path.join(
-                out_dir, jpg, project, exam_dir, file_base_name)
+            jpg_path = os.path.join(out_dir, jpg, project, exam_dir, file_base_name)
             numpy_frames = frames.permute(0, 2, 3, 1).cpu().numpy()
             # Generate random sample or take all
             if sample_frames is None:

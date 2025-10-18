@@ -156,7 +156,8 @@ def video_level_inference_tflite(
         original_seq_length = frames_torch.shape[1]
 
         if sequence_length is not None and frames_torch.shape[1] > sequence_length:
-            frames_torch = frames_torch[:, :sequence_length, :, :, :]
+            indices = np.linspace(0, frames_torch.shape[1] - 1, sequence_length).astype(int)
+            frames_torch = frames_torch[:, indices, :, :, :]
             original_seq_length = sequence_length
 
         if sequence_length is not None and frames_torch.shape[1] < sequence_length:
