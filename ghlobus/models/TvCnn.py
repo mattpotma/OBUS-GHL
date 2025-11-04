@@ -40,7 +40,7 @@ class TvCnn(nn.Module):
         self.cnn_weights = get_weight(self.weight_name)
 
         # Define the required pre-processing:
-        self.preprocess = self.cnn_weights.transforms(antialias=False)
+        self.preprocess = self.cnn_weights.transforms(antialias=True)
 
     def forward(self, x):
         """

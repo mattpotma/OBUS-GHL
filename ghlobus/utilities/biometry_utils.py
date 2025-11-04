@@ -102,9 +102,9 @@ def ga_from_biometrics(bpd: str, ac: str, hc: str, fl: str) -> float:
     Compute GA from biometrics. Some values could be missing.
 
     Reference for 15 GA Hadlock formulas:
-        Hadlock FP, Deter RL, Harrist RB, Park SK, Computer-assisted
-        analysis of fetal age in the third trimester using multiple
-        fetal growth parameters. J Clinic Ultrasound 11: 313-316, 1983.
+        Hadlock FP, Deter RL, Harrist RB, Park SK, Estimating fetal age:
+        computer-assisted analysis of fetal multiple fetal growth
+        parameters, Radiology, pp 497-501, 1984.
 
     Reference for fetal weight using the Hadlock 4-component formula:
         Hadlock et al, Estimation of fetal weight with the use of head,

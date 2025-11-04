@@ -3,6 +3,13 @@ Authors:
 * Courosh Mehanian ( courosh at gmail dot com)
 * Daniel Shea (shea dot dan at gmail dot com)
 
+Contributors:
+* Olivia Zahn
+* Sourabh Kulhare
+* Wenlong Shi
+* Charles Delahunt
+* Matthew Horning
+
 This software is licensed under the MIT license. See LICENSE.txt in the root of
 the repository for details.
 
@@ -10,7 +17,9 @@ the repository for details.
 This starter package for AI-enabled obstetric ultrasound (OBUS) was prepared by the
 Global Health Labs (GHL) machine learning team. This package is based on the FAMLI 
 datasets collected by the University of North Carolina at Chapel Hill (UNC) for 
-training and evaluating AI models for antenatal care [^1].
+training and evaluating AI models for antenatal care [^1]. Details about GHL's work 
+on OBUS can be found at the Global Health Labs Gateway on Gates Open Research: 
+https://gatesopenresearch.org/gateways/ghlabs.
 
 # 2. Overview of the OBUS-GHL Project
 The goal of the OBUS-GHL project is to develop AI models that can assist in the
@@ -663,15 +672,16 @@ growth curve, for example in a condition known as intrauterine growth restrictio
 (IUGR), which can lead to complications during delivery and in the neonatal period.
 
 Given the similarity between `EFW` and `GA` estimation tasks, it is not surprising 
-that the same overall architecture, `Cnn2RnnRegressor`, works for both. There are 
-differences, however, between them. The `EFW` model, rather than directly estimate the 
-fetal weight, uses a multi-output regressor, where the model predicts four biometric 
-measures that are well established as predictors of fetal weight: abdominal 
-circumference (`AC`), head circumference (`HC`), femur length (`FL`), and biparietal 
-diameter (`BPD`)[^5]. The `EFW` model then uses the outputs for these four biometric 
-measures to estimate the fetal weight via the Hadlock formula [^6]. One advantage of 
-this approach is that it leaves room for localization of the model or specialization 
-to subpopulations by using different formulas for estimating fetal weight.
+that the same `RNN` approach using additive attention works for both. There are two 
+notable differences, however, between the two models. At the highest level, the `EFW` 
+model uses a multi-task learning approach. Rather than directly estimate the fetal 
+weight, the model uses a multi-output regressor to predict four biometric measures 
+that are well established as predictors of fetal weight: abdominal circumference 
+(`AC`), head circumference (`HC`), femur length (`FL`), and biparietal diameter 
+(`BPD`)[^5]. The `EFW` model then uses the outputs for these four biometric 
+measures to estimate the fetal weight via the same 4-component Hadlock formula. One 
+advantage of this approach is that it leaves room for localization of the model or 
+specialization to subpopulations by using different formulas for estimating fetal weight.
 
 To facilitate this multi-output approach, the `EFW` module uses a multi-headed version 
 of `BasicAdditiveAttention` for its `RNN` module. `MultipleAdditiveAttention` 
@@ -813,12 +823,14 @@ the bag is an exam, which contains multiple videos, and the bag label is whether
 exam is from a twin pregnancy or not. There are a few choices for what is considered 
 as an individual instance of the bag. They could be identified as frames, or videos, 
 or short sequences of consecutive frames known as clips. The current repository 
-implements frame-level MIL, but provides support for clip-level and video-level MIL in 
-an experimental branch.
+implements frame-level MIL only. The code provides some support for clip-level and 
+video-level MIL and this document describes the mechanics of these alternative 
+MIL approaches, but the full code is not within the scope of the current version of 
+the repository.
 
 The particular flavor of multiple instance learning used in the `TWIN` model is an 
-attention-based model outlined in the paper by Ilse et al. [^7] and partially on 
-a Keras library [^8]. Note however, that an error was found in the Keras library in 
+attention-based model outlined in the paper by Ilse et al. [^6] and partially on 
+a Keras library [^7]. Note however, that an error was found in the Keras library in 
 the implementation of Ilse et al. Our code follows the original paper. The model uses 
 an attention mechanism to weight the importance of each instance in the bag, and then 
 aggregates the weighted instances to produce a bag-level prediction. The weights are 
@@ -868,7 +880,7 @@ model:
         tv_model_name: MobileNet_V2
         tv_weights_name: IMAGENET1K_V2
         mil_format: frame
-        pretrained_path: /workspace/outputs/twin_BAA_fold3_v9/starter_package_twin/8q3cabi7/checkpoints/twin_BAA_8q3cabi7_fold3_epoch_025_val_loss_0.2123_val_accuracy_0.9383.ckpt
+        pretrained_path: /workspace/outputs/twin_BAA_experiment_fold3/checkpoints/twin_BAA_experiment_fold3_e25.ckpt
     rnn:
       class_path: ghlobus.models.MilAttention
       init_args:
@@ -951,7 +963,7 @@ described in Table 12. Note that the `L` dimension is the number of frames in th
 These frames are selected randomly from the `6` videos in the bag, but they are 
 selected in a manner that preserves the temporal order of the frames in each video and 
 an attempt is made to spread them out evenly across the videos. This is achieved by 
-the use of Matern sampling [^9], which is a sampling technique based on a Poisson 
+the use of Matern sampling [^8], which is a sampling technique based on a Poisson 
 base process. The number of channels `C` is set to `3` for RGB images, even though the 
 input is monochrome. During ingestion, the videos are pre-processed to PyTorch 
 tensor files, which are saved as 1-channel `uint8` tensors to conserve disk space. But 
@@ -1069,8 +1081,10 @@ data:
 Inference is the process of using a trained model to make predictions on new data. 
 There are two levels of inferencing possible with OBUS-GHL code base. Small-scale 
 inferencing outputs the model result on a single ultrasound video, or on an entire exam 
-containing multiple videos. Large-scale inferencing runs a model on an entire dataset, 
-usually at the exam level.
+containing multiple videos. This works with the original files (dicom or mp4) as 
+inputs. Large-scale inferencing runs a model on an entire dataset, usually at the 
+exam level. This runs on preprocessed datasets, i.e. data that has gone through the 
+data ingestion process.
 
 ## 8.1. Model Evaluation
 We describe model "evaluation" as running a trained model on a large set of test data 
@@ -1513,9 +1527,9 @@ data:
 ## 8.4. Evaluating the `EFW` model
 The `EFW` model is similar to the `GA` model in overall architecture; it uses a 
 `Cnn2RnnRegressor` framework, with an attention-based `RNN` module. A notable 
-differences with the `GA` model is that instead of directly predicting the target 
+difference with the `GA` model is that instead of directly predicting the target 
 quantity, it predicts four biometrics, which are then transformed by a Hadlock 
-equation to predict the target `EFW`. How this differences impacts the configuration 
+equation to predict the target `EFW`. How this difference impacts the configuration 
 of the inference run will be noted in the sections below. 
 
 ### 8.4.1. Prepare a `yaml` file for the evaluation run
@@ -1837,42 +1851,219 @@ data:
 </pre>
 
 ## 8.6 Small-scale inferencing
-This is done using the `inference.py` module, which is designed to work on either 
-individual DICOM files, or on all the DICOM files within an exam folder.
+There are two scripts for small-scale inferencing. To evaluate models at a small-scale, 
+use:
+- `inference.py`: (Section 8.6.1) This is for  Gestational Age (GA) estimation, Fetal 
+  Presentation (FP) classification, and Estimated Fetal Weight (EFW) estimation.
+- `inference_twin.py`: (Section 8.6.2) This is for evaluating the input against the 
+  multiple gestation (TWIN) model.
 
-### 8.6.1 Inferencing on individual DICOM file
-Navigate to the OBUS-GHL inference directory to run `inference.py`.
+### 8.6.1. How to Use inference.py
+
+This script is designed to perform AI-powered inference on ultrasound video files 
+(DICOM or MP4 format) for three different medical tasks: Gestational Age (GA) 
+estimation, Fetal Presentation (FP) classification, and Estimated Fetal Weight (EFW) 
+calculation.
+
+#### Basic Usage
+
+The script is run from the command line with the following basic structure:
 
 ##### Code block 27.
 <pre>
 <code>
 $ cd /workspace/code/OBUS-GHL/ghlobus/inference
-$ python inference.py --modelpath=PATH_TO_MODEL_CHECKPOINT --cnn_name=TORCHVISION_CNN_NAME 
-  --dicom=PATH_TO_DICOM_FILE
+$ python inference.py --task TASK --modelpath MODEL_PATH --cnn_name CNN_NAME [OPTIONS]
 </code>
 </pre>
 
-### 8.6.2. Inference on an entire exam containing multiple DICOMs
-Similarly, `inference.py` can be run on an entire exam folder containing multiple 
-DICOM files.
+#### Required Arguments
+
+1. **`--task`**: Specifies which analysis to perform
+   - `GA`: Gestational Age estimation (outputs in days)
+   - `FP`: Fetal Presentation classification 
+   - `EFW`: Estimated Fetal Weight calculation (outputs in grams)
+
+2. **`--modelpath`**: Path to the trained model checkpoint file (`.ckpt` format).
+
+3. **`--cnn_name`**: Name of the CNN architecture used in the model (must match the 
+   architecture used during training).
+
+4. **Input files** (choose one):
+   - `--file`: Path to individual DICOM or MP4 file(s). Can be used multiple times to 
+     specify multiple files that will be treated as a single exam.
+   - `--examdir`: Path to directory containing DICOM files to analyze as a single exam.
+
+#### Optional Arguments
+
+- **`--device`**: Computing device to use (default: `cpu`, use `cuda:0` for GPU if 
+  available)
+- **`--outdir`**: Output directory for results (default: `./test_output/`)
+- **`--save_vectors`**: Flag to save detailed frame features and attention scores
+- **`--save_plots`**: Flag to save visualization plots (GA task only)
+- **`--pdx`**: Physical Delta X value in mm/pixel (required when using MP4 files)
+
+#### Example Usage
+
+1. Single DICOM file GA analysis:
 
 ##### Code block 28.
 <pre>
 <code>
-$ python inference.py --modelpath=PATH_TO_MODEL_CHECKPOINT --cnn_name=TORCHVISION_CNN_NAME 
-  --examdir=PATH_TO_EXAM_FOLDER
+$ python inference.py --task GA --modelpath models/ga_model.ckpt --cnn_name resnet18 --file scan1.dcm
 </code>
 </pre>
 
-### 8.6.3. Additional Notes for Inference 
-- By default, the inference code uses CPU. In the case of GPU usage during inference, 
-  please provide the following flag: `--device="cuda:0"`.
-- Frame features, context vectors, and attention scores can be saved to the output 
-  directory  with the flag: `--save_vectors`.
-- Attention score plots can be saved to the output directory with the flag:
-  `--save_plots`.
-- Minor differences in the output decimal values (e.g., `GA` = 172.527 vs `GA` = 172.554) 
-  are expected owing to differences in hardware configurations.
+2. Multiple files as an exam:
+
+##### Code block 29.
+<pre>
+<code>
+$ python inference.py --task FP --modelpath models/fp_model.ckpt --cnn_name efficientnet_b0 --file scan1.dcm --file scan2.dcm --file scan3.dcm
+</code>
+</pre>
+
+3. Directory of files with GPU:
+
+##### Code block 30.
+<pre>
+<code>
+$ python inference.py --task EFW --modelpath models/efw_model.ckpt --cnn_name resnet34 --examdir /path/to/exam/folder --device cuda:0
+</code>
+</pre>
+
+4. MP4 file analysis:
+
+##### Code block 31.
+<pre>
+<code>
+$ python inference.py --task GA --modelpath models/ga_model.ckpt --cnn_name resnet18 --file video.mp4 --pdx 0.1
+</code>
+</pre>
+
+#### Output
+The script generates:
+- **CSV files** with prediction results in the specified output directory
+- **Video-level predictions** for each individual file
+- **Exam-level predictions** when multiple files are analyzed together
+- **Optional**: Detailed feature vectors, attention scores, and visualization plots
+
+#### Important Notes
+- When using MP4 files, the `--pdx` parameter is mandatory and should specify the 
+  physical scale in millimeters per pixel
+- Multiple input files are treated as belonging to the same exam and will generate 
+  both individual video predictions and combined exam-level predictions
+- The CNN architecture specified in `--cnn_name` must match exactly what was used 
+  during model training
+- GPU acceleration is available if CUDA is installed and a compatible GPU is present
+- Minor differences in the output decimal values (e.g., `GA` = 172.527 vs `GA` = 172.554)
+  are expected owing to differences in hardware configurations
+- This tool is particularly useful for batch processing ultrasound videos in clinical 
+  or research settings where consistent, automated analysis is needed
+
+### 8.6.2. How to Use inference_twin.py
+
+This script is specifically designed to perform multiple gestation (twin) detection on 
+ultrasound exams. Unlike `inference.py`, this script requires exactly 6 ultrasound 
+video files representing a complete exam and uses Multiple Instance Learning (MIL) to 
+classify whether the exam contains singleton or multiple fetuses.
+
+#### Basic Usage
+
+The script is run from the command line with the following basic structure:
+
+##### Code block 32.
+<pre>
+<code>
+$ cd /workspace/code/OBUS-GHL/ghlobus/inference
+$ python inference_twin.py --modelpath MODEL_PATH [OPTIONS]
+</code>
+</pre>
+
+#### Required Arguments
+
+1. **`--modelpath`**: Path to the trained TWIN model checkpoint file (`.ckpt` format)
+
+2. **Input files** (choose one):
+   - `--file`: Path to exactly 6 DICOM or MP4 files. Must be used exactly 6 times to 
+     specify all files in the exam
+   - `--examdir`: Path to directory containing exactly 6 DICOM files
+
+#### Optional Arguments
+
+- **`--cnn_name`**: Name of the CNN architecture (default: `MobileNet_V2`)
+- **`--device`**: Computing device to use (default: `cpu`, use `cuda:0` for GPU if 
+  available)
+- **`--outdir`**: Output directory for results (default: `./test_output/`)
+- **`--pdx`**: Physical Delta X value in mm/pixel (required when using MP4 files)
+- **`--frame_sampling`**: Frame sampling strategy - `exam` (default) or `video`
+- **`--bag_size`**: Number of frames to sample for inference (default: 1000)
+- **`--video_prediction_threshold`**: Classification threshold (if not provided, uses 
+  argmax)
+
+#### Frame Sampling Strategies
+
+- **`exam`**: Concatenates all frames from all 6 videos and samples from the combined pool
+- **`video`**: Samples frames independently from each of the 6 videos
+
+#### Example Usage
+
+1. **Exam directory analysis:**
+
+##### Code block 33.
+<pre>
+<code>
+$ python inference_twin.py --modelpath models/twin_model.ckpt --examdir /path/to/exam/folder
+</code>
+</pre>
+
+2. **Individual files with GPU:**
+
+##### Code block 34.
+<pre>
+<code>
+$ python inference_twin.py --modelpath models/twin_model.ckpt --device cuda:0 \
+  --file scan1.dcm --file scan2.dcm --file scan3.dcm \
+  --file scan4.dcm --file scan5.dcm --file scan6.dcm
+</code>
+</pre>
+
+3. **MP4 files with `pdx` and custom `bag_size` parameters:**
+
+##### Code block 35.
+<pre>
+<code>
+$ python inference_twin.py --modelpath models/twin_model.ckpt --pdx 0.1 \
+  --frame_sampling video --bag_size 500 --video_prediction_threshold 0.7 \
+  --file video1.mp4 --file video2.mp4 --file video3.mp4 \
+  --file video4.mp4 --file video5.mp4 --file video6.mp4
+</code>
+</pre>
+
+#### Output
+
+The script generates:
+- **CSV file** with exam-level prediction results
+- **Classification scores** for singleton vs. twin probability
+- **Prediction confidence** and detailed logits
+- **Frame sampling statistics** and model parameters used
+
+#### Important Notes for TWIN Inference
+
+- **Exactly 6 files required**: The script will fail if not exactly 6 ultrasound files 
+  are provided
+- **Multiple Instance Learning**: Uses exam-level analysis rather than individual 
+  video analysis
+- **Frame sampling crucial**: The `frame_sampling` strategy significantly affects 
+  results and should match training protocols
+- **Bag size considerations**: Larger bag sizes provide more comprehensive analysis 
+  but require more memory
+- **Threshold tuning**: Custom thresholds can be used to optimize sensitivity and 
+  specificity trade-offs
+- **GPU recommended**: TWIN models are computationally intensive and benefit 
+  significantly from GPU acceleration
+- **When using MP4 files**: The `--pdx` parameter is mandatory for proper physical 
+  scaling
 
 # 9. References
 
@@ -1889,15 +2080,11 @@ ultrasound sweeps in low-resource settings. NEJM Evidence, 1 (5), 2022.
 [^5]: Hadlock et al, Estimation of fetal weight with the use of head, body, 
 and femur measurements--A prospective study, Am J Obs Gyn, 151 (3), pp 333-337, 1985.
 
-[^6]: Hadlock FP, Deter RL, Harrist RB, Park SK, Computer-assisted analysis of 
-fetal age in the third trimester using multiple fetal growth parameters. J Clinic 
-Ultrasound 11: 313-316, 1983.
-
-[^7]: M Ilse, J Tomczak, M Welling, Attention-based deep multiple instance learning.
+[^6]: M Ilse, J Tomczak, M Welling, Attention-based deep multiple instance learning.
 arXiv:1802.04712v4 [cs.LG] 28 Jun 2018.
 
-[^8]: Keras MIL repository https://keras.io/examples/vision/attention_mil_classification/.
+[^7]: Keras MIL repository https://keras.io/examples/vision/attention_mil_classification/.
 
-[^9]: Matérn, B. (1986). Spatial Variation: Stochastic Models and their 
+[^8]: Matérn, B. (1986). Spatial Variation: Stochastic Models and their 
 Applications to Some Problems in Forest Surveys and Other Sampling Investigations. 
 Springer, Heidelberg, 2nd edition.
