@@ -78,7 +78,7 @@ class TvMilCnn(nn.Module):
                                           pretrained_freeze)
 
         # Define the required pre-processing:
-        self.preprocess = self.cnn_weights.transforms(antialias=True)
+        self.preprocess = self.cnn_weights.transforms(antialias=False)
 
     def load_pretrained_weights(self,
                                 pretrained_path: str,

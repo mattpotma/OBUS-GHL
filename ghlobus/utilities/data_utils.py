@@ -829,7 +829,7 @@ def crop_and_scale_frames_tensor(frames: torch.Tensor,
     # Attempt resize
     try:
         # check this transform on RGB 3-channel image(s) with dims ([n,]c,h,w)
-        tfx = transforms.Resize(final_dims, resample_method, antialias=True)
+        tfx = transforms.Resize(final_dims, resample_method, antialias=False)
         frames = tfx(frames)
     except:
         # resize failed, check if we should return frames anyway or None
