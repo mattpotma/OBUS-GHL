@@ -170,6 +170,23 @@ class OptimizedVariableLengthModel(nn.Module):
         return features, attention_weights, output_days, context_vector
 
 
+class FPModelWrapper(nn.Module):
+    """Wrapper that trims classifier outputs down to logits/softmax."""
+
+    def __init__(self, base_model):
+        super().__init__()
+        self.base_model = base_model
+
+    def forward(self, frames):
+        result = self.base_model(frames)
+
+        # Cnn2RnnClassifier returns (y_hat, frame_features, context, aux, logits)
+        if isinstance(result, (tuple, list)):
+            return result[0]
+
+        return result
+
+
 def export(args):
     dicomlist = enumerate_dicom_files(args.dicom, args.examdir)
 
@@ -186,7 +203,7 @@ def export(args):
     if args.task == "GA_FRAMEWISE":
         return GA_TASK_EXPORT_FRAMEWISE(args, dicomlist)
     elif args.task == "FP":
-        return FP_TASK(args, dicomlist, LGA_MEAN, LGA_STD)
+        return FP_TASK_EXPORT(args, dicomlist)
 
 
 def GA_TASK_EXPORT(args, dicomlist):
@@ -309,6 +326,68 @@ def FP_TASK(args, dicomlist, lmean, lstd):
     del results["frame_features"]
     return results
 
+def FP_TASK_EXPORT(args, dicomlist):
+    """Export FP classifier to TFLite format."""
+    base_model = load_Cnn2RnnClassifier_model(
+        args.modelpath,
+        args.device,
+        args.cnn_name,
+        weights_name="IMAGENET1K_V2",
+        cnn_layer_id=18,
+    )
+    model = FPModelWrapper(base_model)
+    model.eval()
+    print(model)
+
+    dicompath = dicomlist[0]
+    frames = get_dicom_frames(dicompath, device=args.device, mode="FP")
+
+    print(
+        f"Exporting FP model to TFLite format with sequence length of {args.sequence_length}..."
+    )
+    print(f"Frames shape: {frames.shape}, dtype: {frames.dtype}")
+
+    if frames.shape[1] > args.sequence_length:
+        print(
+            f"Warning: DICOM has {frames.shape[1]} frames, which exceeds the max sequence length of {args.sequence_length}. Truncating."
+        )
+        frames = frames[:, : args.sequence_length, :, :, :]
+    elif frames.shape[1] < args.sequence_length:
+        print(
+            f"Warning: DICOM has {frames.shape[1]} frames, which is less than the max sequence length of {args.sequence_length}. Padding with zeros."
+        )
+        c, h, w = frames.shape[2], frames.shape[3], frames.shape[4]
+        pad_length = args.sequence_length - frames.shape[1]
+        pad_tensor = torch.zeros(
+            (frames.shape[0], pad_length, c, h, w),
+            dtype=frames.dtype,
+            device=args.device,
+        )
+        frames = torch.cat((frames, pad_tensor), dim=1)
+
+    edge_model = ai_edge_torch.convert(model, (frames,))
+    print(edge_model)
+    print("Exporting FP model...")
+
+    output_dir = Path("tflite_models")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    tflite_filename = output_dir / f"ghlobus_fp_model_{args.sequence_length}.tflite"
+    edge_model.export(str(tflite_filename))
+    print(f"TFLite FP model saved to {tflite_filename}")
+
+    print(f"Exporting FP model with optimization: {tf.lite.Optimize.DEFAULT}...")
+    quantized_model = ai_edge_torch.convert(
+        model,
+        (frames,),
+        _ai_edge_converter_flags={"optimizations": [tf.lite.Optimize.DEFAULT]},
+    )
+    quantized_tflite_filename = (
+        output_dir / f"ghlobus_fp_model_opt_{args.sequence_length}.tflite"
+    )
+    quantized_model.export(str(quantized_tflite_filename))
+    print(f"Quantized TFLite FP model saved to {quantized_tflite_filename}")
+    return tflite_filename
 
 def main():
     # Configure the ArgumentParser

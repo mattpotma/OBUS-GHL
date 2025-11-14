@@ -28,7 +28,8 @@ from ghlobus.utilities.inference_utils import (
 # Set defaults
 DEFAULT_TFLITE_DIR = "./tflite_models/"
 DEFAULT_OUTDIR = "./test_output_tflite/"
-ALLOWED_TASKS = ["GA"]  # Only GA supported for now
+ALLOWED_TASKS = ["GA", "FP"]
+PRESENTATION_LABELS = {0: "cephalic", 1: "noncephalic"}
 
 
 def load_tflite_model(tflite_path: str):
@@ -194,6 +195,57 @@ def video_level_inference_tflite(
 
     return results
 
+def video_level_inference_tflite_fp(
+    interpreter, dicomlist, outdir, sequence_length=None
+):
+    """
+    Run TFLite FP inference on each DICOM file individually.
+    """
+    results = {
+        "paths": [],
+        "Predicted presentation": [],
+        "Probabilities": [],
+    }
+
+    for dicompath in dicomlist:
+        print(f"Processing: {dicompath}")
+
+        frames_torch = get_dicom_frames(dicompath, device="cpu", mode="FP")
+        original_seq_length = frames_torch.shape[1]
+
+        if sequence_length is not None and frames_torch.shape[1] > sequence_length:
+            indices = np.linspace(0, frames_torch.shape[1] - 1, sequence_length).astype(int)
+            frames_torch = frames_torch[:, indices, :, :, :]
+            original_seq_length = sequence_length
+
+        if sequence_length is not None and frames_torch.shape[1] < sequence_length:
+            pad_length = sequence_length - frames_torch.shape[1]
+            pad_tensor = torch.zeros(
+                (1, pad_length, 3, 256, 256), dtype=frames_torch.dtype
+            )
+            frames_torch = torch.cat((frames_torch, pad_tensor), dim=1)
+
+        frames_numpy = frames_torch.detach().cpu().numpy()
+
+        print(f"Input shape: {frames_numpy.shape}")
+        print(f"Original sequence length: {original_seq_length}")
+
+        logits = tflite_inference(interpreter, frames_numpy, original_seq_length)
+        logits = np.squeeze(logits)
+
+        probs = np.exp(logits - np.max(logits))
+        probs = probs / np.sum(probs)
+        pred_idx = int(np.argmax(probs))
+        pred_label = PRESENTATION_LABELS.get(pred_idx, str(pred_idx))
+
+        print(f"Predicted presentation: {pred_label} (prob={probs[pred_idx]:.4f})")
+
+        results["paths"].append(dicompath)
+        results["Predicted presentation"].append(pred_label)
+        results["Probabilities"].append(probs.tolist())
+
+    return results
+
 
 def GA_TASK_tflite(args, dicomlist, lmean, lstd):
     """
@@ -224,6 +276,23 @@ def GA_TASK_tflite(args, dicomlist, lmean, lstd):
 
     return results
 
+def FP_TASK_tflite(args, dicomlist):
+    """
+    Perform the FP task inference using TFLite.
+    """
+    print("\n\n" + "=" * 80)
+    print(f"Loading FP TFLite model from: {args.tflite_dir} and model name {args.tflite_model_name}")
+    tflite_model_path = os.path.join(args.tflite_dir, args.tflite_model_name)
+    if not os.path.exists(tflite_model_path):
+        raise FileNotFoundError(f"TFLite model not found at: {tflite_model_path}")
+
+    interpreter = load_tflite_model(tflite_model_path)
+
+    results = video_level_inference_tflite_fp(
+        interpreter, dicomlist, args.outdir, sequence_length=args.sequence_length
+    )
+
+    return results
 
 def inference(args):
     """
@@ -256,6 +325,8 @@ def inference(args):
     # Step 5: Perform task-specific inference
     if args.task == "GA":
         return GA_TASK_tflite(args, dicomlist, LGA_MEAN, LGA_STD)
+    elif args.task == "FP":
+        return FP_TASK_tflite(args, dicomlist)
     else:
         raise ValueError(f"Task {args.task} not supported in TFLite inference yet.")
 
@@ -269,8 +340,8 @@ def main():
         "--task",
         required=True,
         type=str,
-        choices=["GA"],
-        help="Task to perform: 'GA' (Gestational Age). Only GA supported currently.",
+        choices=ALLOWED_TASKS,
+        help="Task to perform: 'GA' (Gestational Age) or 'FP' (Fetal Presentation)",
     )
     parser.add_argument(
         "--tflite_dir",
