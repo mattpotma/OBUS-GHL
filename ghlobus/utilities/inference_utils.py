@@ -836,6 +836,9 @@ def video_level_inference_FP(model: LightningModule,
 
         softmax_output = np.exp(logits) / np.sum(np.exp(logits))
 
+        cephalic_prob, noncephalic_prob = softmax_output[0]
+        print(f"noncephalic prob: {noncephalic_prob:.4f}")
+
         # Step 4c. Print final outputs:
         print(f"For input dicom: {dicompath}")
         print(f"Predicted presentation: {presentation_dict[str(pred[0])]}")
