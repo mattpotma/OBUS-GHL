@@ -296,8 +296,8 @@ def video_level_inference_tflite_efw(
         ac_pred, fl_pred, hc_pred, bpd_pred, efw_pred = outputs[:5]
 
         print(
-            f"Predicted AC: {ac_pred:.2f} mm, FL: {fl_pred:.2f} mm, HC: {hc_pred:.2f} mm, "
-            f"BPD: {bpd_pred:.2f} mm, EFW: {efw_pred:.2f} g"
+            f"Predicted AC: {ac_pred:.6f} mm, FL: {fl_pred:.6f} mm, HC: {hc_pred:.6f} mm, "
+            f"BPD: {bpd_pred:.6f} mm, EFW: {efw_pred:.6f} g"
         )
 
         results["paths"].append(dicompath)
