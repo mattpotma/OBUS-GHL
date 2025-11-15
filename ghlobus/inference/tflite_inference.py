@@ -28,7 +28,7 @@ from ghlobus.utilities.inference_utils import (
 # Set defaults
 DEFAULT_TFLITE_DIR = "./tflite_models/"
 DEFAULT_OUTDIR = "./test_output_tflite/"
-ALLOWED_TASKS = ["GA", "FP"]
+ALLOWED_TASKS = ["GA", "FP", "EFW"]
 PRESENTATION_LABELS = {0: "cephalic", 1: "noncephalic"}
 
 
@@ -246,6 +246,69 @@ def video_level_inference_tflite_fp(
 
     return results
 
+def video_level_inference_tflite_efw(
+    interpreter, dicomlist, outdir, sequence_length=None
+):
+    """
+    Run TFLite EFW inference on each DICOM file individually.
+    """
+    results = {
+        "paths": [],
+        "Predicted AC (mm)": [],
+        "Predicted FL (mm)": [],
+        "Predicted HC (mm)": [],
+        "Predicted BPD (mm)": [],
+        "Predicted EFW (g)": [],
+    }
+
+    for dicompath in dicomlist:
+        print(f"Processing: {dicompath}")
+
+        frames_torch = get_dicom_frames(dicompath, device="cpu", mode="EFW")
+        original_seq_length = frames_torch.shape[1]
+
+        if sequence_length is not None and frames_torch.shape[1] > sequence_length:
+            indices = np.linspace(0, frames_torch.shape[1] - 1, sequence_length).astype(int)
+            frames_torch = frames_torch[:, indices, :, :, :]
+            original_seq_length = sequence_length
+
+        if sequence_length is not None and frames_torch.shape[1] < sequence_length:
+            pad_length = sequence_length - frames_torch.shape[1]
+            pad_tensor = torch.zeros(
+                (1, pad_length, 3, 256, 256), dtype=frames_torch.dtype
+            )
+            frames_torch = torch.cat((frames_torch, pad_tensor), dim=1)
+
+        frames_numpy = frames_torch.detach().cpu().numpy()
+
+        print(f"Input shape: {frames_numpy.shape}")
+        print(f"Original sequence length: {original_seq_length}")
+
+        outputs = tflite_inference(interpreter, frames_numpy, original_seq_length)
+        outputs = np.squeeze(outputs)
+
+        if outputs.ndim == 0:
+            outputs = np.expand_dims(outputs, 0)
+
+        if outputs.size < 5:
+            raise ValueError("EFW TFLite model must output five values (AC, FL, HC, BPD, EFW).")
+
+        ac_pred, fl_pred, hc_pred, bpd_pred, efw_pred = outputs[:5]
+
+        print(
+            f"Predicted AC: {ac_pred:.2f} mm, FL: {fl_pred:.2f} mm, HC: {hc_pred:.2f} mm, "
+            f"BPD: {bpd_pred:.2f} mm, EFW: {efw_pred:.2f} g"
+        )
+
+        results["paths"].append(dicompath)
+        results["Predicted AC (mm)"].append(float(ac_pred))
+        results["Predicted FL (mm)"].append(float(fl_pred))
+        results["Predicted HC (mm)"].append(float(hc_pred))
+        results["Predicted BPD (mm)"].append(float(bpd_pred))
+        results["Predicted EFW (g)"].append(float(efw_pred))
+
+    return results
+
 
 def GA_TASK_tflite(args, dicomlist, lmean, lstd):
     """
@@ -294,6 +357,24 @@ def FP_TASK_tflite(args, dicomlist):
 
     return results
 
+def EFW_TASK_tflite(args, dicomlist):
+    """
+    Perform the EFW task inference using TFLite.
+    """
+    print("\n\n" + "=" * 80)
+    print(f"Loading EFW TFLite model from: {args.tflite_dir} and model name {args.tflite_model_name}")
+    tflite_model_path = os.path.join(args.tflite_dir, args.tflite_model_name)
+    if not os.path.exists(tflite_model_path):
+        raise FileNotFoundError(f"TFLite model not found at: {tflite_model_path}")
+
+    interpreter = load_tflite_model(tflite_model_path)
+
+    results = video_level_inference_tflite_efw(
+        interpreter, dicomlist, args.outdir, sequence_length=args.sequence_length
+    )
+
+    return results
+
 def inference(args):
     """
     Main inference function.
@@ -327,6 +408,8 @@ def inference(args):
         return GA_TASK_tflite(args, dicomlist, LGA_MEAN, LGA_STD)
     elif args.task == "FP":
         return FP_TASK_tflite(args, dicomlist)
+    elif args.task == "EFW":
+        return EFW_TASK_tflite(args, dicomlist)
     else:
         raise ValueError(f"Task {args.task} not supported in TFLite inference yet.")
 

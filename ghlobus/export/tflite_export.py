@@ -1,6 +1,7 @@
 """Export to TFLite."""
 
 import argparse
+import math
 from pathlib import Path
 import tensorflow as tf
 import torch
@@ -18,13 +19,21 @@ from ghlobus.utilities.inference_utils import (
     write_results,
     LGA_MEAN,
     LGA_STD,
+    AC_MEAN,
+    AC_STD,
+    HC_MEAN,
+    HC_STD,
+    FL_MEAN,
+    FL_STD,
+    BPD_MEAN,
+    BPD_STD,
 )
 from ghlobus.models.BasicAdditiveAttention import BasicAdditiveAttention
 
 # Set default_model and default_dicom
 DEFAULT_DEVICE = "cpu"
 DEFAULT_OUTDIR = "./test_output/"
-ALLOWED_TASKS = ["GA", "GA_FRAMEWISE", "FP"]
+ALLOWED_TASKS = ["GA", "GA_FRAMEWISE", "FP", "EFW"]
 
 
 class ModelWithRescaling(nn.Module):
@@ -42,6 +51,66 @@ class ModelWithRescaling(nn.Module):
         y_hat_days = torch.exp((y_hat_log * self.lga_std) + self.lga_mean)
 
         return y_hat_days
+
+class EFWModelWithRescaling(nn.Module):
+    """Wrapper that rescales log biometrics and computes EFW."""
+
+    def __init__(
+        self,
+        base_model,
+        ac_mean=AC_MEAN,
+        ac_std=AC_STD,
+        hc_mean=HC_MEAN,
+        hc_std=HC_STD,
+        fl_mean=FL_MEAN,
+        fl_std=FL_STD,
+        bpd_mean=BPD_MEAN,
+        bpd_std=BPD_STD,
+    ):
+        super().__init__()
+        self.base_model = base_model
+        self.register_buffer('ac_mean', torch.tensor(ac_mean, dtype=torch.float32))
+        self.register_buffer('ac_std', torch.tensor(ac_std, dtype=torch.float32))
+        self.register_buffer('hc_mean', torch.tensor(hc_mean, dtype=torch.float32))
+        self.register_buffer('hc_std', torch.tensor(hc_std, dtype=torch.float32))
+        self.register_buffer('fl_mean', torch.tensor(fl_mean, dtype=torch.float32))
+        self.register_buffer('fl_std', torch.tensor(fl_std, dtype=torch.float32))
+        self.register_buffer('bpd_mean', torch.tensor(bpd_mean, dtype=torch.float32))
+        self.register_buffer('bpd_std', torch.tensor(bpd_std, dtype=torch.float32))
+
+    def forward(self, frames):
+        result = self.base_model(frames)
+        y_hat_log, *_ = result
+
+        if y_hat_log.ndim == 1:
+            y_hat_log = y_hat_log.unsqueeze(0)
+
+        log_ac = y_hat_log[:, 0]
+        log_fl = y_hat_log[:, 1]
+        log_hc = y_hat_log[:, 2]
+        log_bpd = y_hat_log[:, 3]
+
+        ac_pred = torch.exp((log_ac * self.ac_std) + self.ac_mean)
+        fl_pred = torch.exp((log_fl * self.fl_std) + self.fl_mean)
+        hc_pred = torch.exp((log_hc * self.hc_std) + self.hc_mean)
+        bpd_pred = torch.exp((log_bpd * self.bpd_std) + self.bpd_mean)
+
+        log10_efw = (
+            1.3596
+            - 0.00386 * ac_pred * fl_pred
+            + 0.0064 * hc_pred
+            + 0.00061 * bpd_pred * ac_pred
+            + 0.0424 * ac_pred
+            + 0.174 * fl_pred
+        )
+        efw_pred = torch.exp(log10_efw * math.log(10.0))
+
+        outputs = torch.stack(
+            (ac_pred, fl_pred, hc_pred, bpd_pred, efw_pred),
+            dim=-1,
+        )
+
+        return outputs
 
 
 class BasicAdditiveAttentionWithMasking(nn.Module):
@@ -202,8 +271,10 @@ def export(args):
         return GA_TASK_EXPORT(args, dicomlist)
     if args.task == "GA_FRAMEWISE":
         return GA_TASK_EXPORT_FRAMEWISE(args, dicomlist)
-    elif args.task == "FP":
+    if args.task == "FP":
         return FP_TASK_EXPORT(args, dicomlist)
+    if args.task == "EFW":
+        return EFW_TASK_EXPORT(args, dicomlist)
 
 
 def GA_TASK_EXPORT(args, dicomlist):
@@ -389,6 +460,65 @@ def FP_TASK_EXPORT(args, dicomlist):
     print(f"Quantized TFLite FP model saved to {quantized_tflite_filename}")
     return tflite_filename
 
+def EFW_TASK_EXPORT(args, dicomlist):
+    """Export EFW regressor to TFLite format."""
+    base_model = load_Cnn2RnnRegressor_model(
+        args.modelpath, args.device, args.cnn_name, mode="EFW"
+    )
+    model = EFWModelWithRescaling(base_model)
+    model.eval()
+    print(model)
+
+    dicompath = dicomlist[0]
+    frames = get_dicom_frames(dicompath, device=args.device, mode="EFW")
+
+    print(
+        f"Exporting EFW model to TFLite format with sequence length of {args.sequence_length}..."
+    )
+    print(f"Frames shape: {frames.shape}, dtype: {frames.dtype}")
+
+    if frames.shape[1] > args.sequence_length:
+        print(
+            f"Warning: DICOM has {frames.shape[1]} frames, which exceeds the max sequence length of {args.sequence_length}. Truncating."
+        )
+        frames = frames[:, : args.sequence_length, :, :, :]
+    elif frames.shape[1] < args.sequence_length:
+        print(
+            f"Warning: DICOM has {frames.shape[1]} frames, which is less than the max sequence length of {args.sequence_length}. Padding with zeros."
+        )
+        c, h, w = frames.shape[2], frames.shape[3], frames.shape[4]
+        pad_length = args.sequence_length - frames.shape[1]
+        pad_tensor = torch.zeros(
+            (frames.shape[0], pad_length, c, h, w),
+            dtype=frames.dtype,
+            device=args.device,
+        )
+        frames = torch.cat((frames, pad_tensor), dim=1)
+
+    edge_model = ai_edge_torch.convert(model, (frames,))
+    print(edge_model)
+    print("Exporting EFW model...")
+
+    output_dir = Path("tflite_models")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    tflite_filename = output_dir / f"ghlobus_efw_model_{args.sequence_length}.tflite"
+    edge_model.export(str(tflite_filename))
+    print(f"TFLite EFW model saved to {tflite_filename}")
+
+    print(f"Exporting EFW model with optimization: {tf.lite.Optimize.DEFAULT}...")
+    quantized_model = ai_edge_torch.convert(
+        model,
+        (frames,),
+        _ai_edge_converter_flags={"optimizations": [tf.lite.Optimize.DEFAULT]},
+    )
+    quantized_tflite_filename = (
+        output_dir / f"ghlobus_efw_model_opt_{args.sequence_length}.tflite"
+    )
+    quantized_model.export(str(quantized_tflite_filename))
+    print(f"Quantized TFLite EFW model saved to {quantized_tflite_filename}")
+    return tflite_filename
+
 def main():
     # Configure the ArgumentParser
     cli_description = (
@@ -400,7 +530,7 @@ def main():
         required=True,
         type=str,
         choices=ALLOWED_TASKS,
-        help="Task to perform: 'GA' (Gestational Age) or 'FP' (Fetal Presentation).",
+        help="Task to perform: 'GA' (Gestational Age), 'FP' (Fetal Presentation) or 'EFW' (Estimated Fetal Weight).",
     )
     parser.add_argument(
         "--modelpath",
