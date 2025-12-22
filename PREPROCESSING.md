@@ -144,3 +144,7 @@ reasonable.
 I'm giving you two models via teams, `ghlobus_ga_model_50.tflite` and `ghlobus_ga_model_opt_50.tflite`. Either one
 should work. The one with `opt` is smaller by about a factor of 4. Slightly less accurate, but will be faster on a lot
 of devices. We (Ella) need to do testing to see which is best. But even the big one is only 14 MB and pretty fast.
+
+# Fetal Presentation model
+
+The fetal presentation model has the exact same preprocessing as the gestational age model. It outputs a probability, where anything from 0.5 to 1 is cephalic, and 0 to 0.5 is non-cephalic. This binary result (cephalic vs non-cephalic) is the sole output of the model.
