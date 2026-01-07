@@ -238,9 +238,8 @@ class OptimizedVariableLengthModel(nn.Module):
         # (y_hat, frame_features, context, attention)
         return features, attention_weights, output_days, context_vector
 
-
 class FPModelWrapper(nn.Module):
-    """Wrapper that trims classifier outputs down to logits/softmax."""
+    """Wrapper that outputs (probabilities, prediction) for FP."""
 
     def __init__(self, base_model):
         super().__init__()
@@ -251,9 +250,19 @@ class FPModelWrapper(nn.Module):
 
         # Cnn2RnnClassifier returns (y_hat, frame_features, context, aux, logits)
         if isinstance(result, (tuple, list)):
-            return result[0]
+            logits = result[4]
+        else:
+            logits = result
 
-        return result
+        # Ensure shape (B, 2)
+        if logits.ndim == 1:
+            logits = logits.unsqueeze(0)
+
+        probs = torch.softmax(logits, dim=-1).to(torch.float32)  # (B,2)
+        pred = torch.argmax(probs, dim=-1).to(torch.int32)       # (B,)
+
+        return probs, pred
+
 
 
 def export(args):

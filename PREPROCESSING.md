@@ -147,4 +147,16 @@ of devices. We (Ella) need to do testing to see which is best. But even the big 
 
 # Fetal Presentation model
 
-The fetal presentation model has the exact same preprocessing as the gestational age model. It outputs a probability, where anything from 0.5 to 1 is cephalic, and 0 to 0.5 is non-cephalic. This binary result (cephalic vs non-cephalic) is the sole output of the model.
+The fetal presentation model uses the same preprocessing pipeline as the gestational age model. 
+
+The model produces two output tensors:
+
+Predicted class with shape (1,) (int32):
+0 = cephalic
+1 = noncephalic
+
+Class probabilities with shape (1, 2) (float32):
+probs[0] = probability of cephalic
+probs[1] = probability of noncephalic
+
+The predicted class can be used directly as the final output. The probability output is included to support post-processing we may want to do at some point such as averaging probabilities across all six sweeps to determine the most likely fetal presentation for an exam.
