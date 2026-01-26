@@ -96,6 +96,7 @@ def GA_TASK(args, dicomlist, lmean, lstd):
         mode='GA',
         lmean=lmean,
         lstd=lstd,
+        sequence_length=args.sequence_length,
     )
 
     # Step 5a. [Optional] Run exam-level inference for GA.
@@ -249,6 +250,12 @@ def main():
     group.add_argument('--examdir', default=None, type=str,
                        help="Input directory containing DICOM file(s) to consider as an exam. Results are " +
                             "tabulated on the video and exam level.")
+    parser.add_argument(
+        "--sequence_length",
+        default=None,
+        type=int,
+        help="Optional sequence length to pad/truncate input frames to. Default is None (use all frames).",
+    )
 
     # Extract command line arguments
     args = parser.parse_args()

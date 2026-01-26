@@ -23,6 +23,7 @@ from ghlobus.utilities.inference_utils import (
     get_dicom_frames,
     LGA_MEAN,
     LGA_STD,
+    resample_frames,
 )
 
 # Set defaults
@@ -70,32 +71,6 @@ def tflite_inference(interpreter, input_data, seq_length=None):
     # Get input shape
     input_shape = input_details[0]["shape"]
     print(f"Model expects input shape: {input_shape}")
-
-    model_sequence_length = input_shape[1]
-    data_sequence_length = input_data.shape[1]
-
-    if model_sequence_length > data_sequence_length:
-        # Reflict the data and concatenate to the right length
-        pad_length = model_sequence_length - data_sequence_length
-        print(f"Padding input data from {data_sequence_length} to {model_sequence_length}")
-        input_data_reverse = input_data[:, ::-1, :, :, :]
-        num_repeats = (pad_length // data_sequence_length) + 1
-        pad_data = np.concatenate([input_data_reverse] * num_repeats, axis=1)
-        pad_data = pad_data[:, :pad_length, :, :, :]
-        input_data = np.concatenate([input_data, pad_data], axis=1)
-        print(f"Padded input shape: {input_data.shape}")
-        # Zero pad to the right length
-        # pad_length = model_sequence_length - data_sequence_length
-        # print(f"Padding input data from {data_sequence_length} to {model_sequence_length}")
-        # pad_data = np.zeros((input_data.shape[0], pad_length, input_data.shape[2], input_data.shape[3], input_data.shape[4]), dtype=input_data.dtype)
-        # input_data = np.concatenate((pad_data, input_data), axis=1)
-        # print(f"Padded input shape: {input_data.shape}")
-    elif model_sequence_length < data_sequence_length:
-        # Regularly sample to the right length
-        print(f"Truncating input data from {data_sequence_length} to {model_sequence_length}")
-        indices = np.linspace(0, data_sequence_length - 1, model_sequence_length).astype(int)
-        input_data = input_data[:, indices, :, :, :]
-        print(f"Truncated input shape: {input_data.shape}")
 
     # Convert input to the expected type (UINT8 as expected by the model)
     if input_details[0]["dtype"] == np.uint8:
@@ -153,32 +128,19 @@ def video_level_inference_tflite(
         frames_torch = get_dicom_frames(dicompath, device="cpu", mode="GA")
         # Input shape: (1, 110, 3, 256, 256)
 
-        # Remember original sequence length before padding
-        original_seq_length = frames_torch.shape[1]
-
-        if sequence_length is not None and frames_torch.shape[1] > sequence_length:
-            indices = np.linspace(0, frames_torch.shape[1] - 1, sequence_length).astype(int)
-            frames_torch = frames_torch[:, indices, :, :, :]
-            original_seq_length = sequence_length
-
-        if sequence_length is not None and frames_torch.shape[1] < sequence_length:
-            # Zero pad to the right length
-            pad_length = sequence_length - frames_torch.shape[1]
-            pad_tensor = torch.zeros(
-                (1, pad_length, 3, 256, 256), dtype=frames_torch.dtype
-            )
-            frames_torch = torch.cat((frames_torch, pad_tensor), dim=1)
+        frames_torch = resample_frames(
+            frames_torch,
+            sequence_length=sequence_length,
+            channels=frames_torch.shape[2],
+            hw=(frames_torch.shape[3], frames_torch.shape[4]),
+        )
 
         frames_numpy = (
             frames_torch.detach().cpu().numpy()
         )  # Keep original dtype (uint8)
 
-        print(f"Input shape: {frames_numpy.shape}")
-        print(f"Original sequence length: {original_seq_length}")
-
         # Step 2: Run TFLite inference
-        # Pass actual sequence length for variable length models (before padding)
-        y_hat_days = tflite_inference(interpreter, frames_numpy, original_seq_length)
+        y_hat_days = tflite_inference(interpreter, frames_numpy, frames_numpy.shape[0])
 
         # Step 3: Extract scalar values (handle different output shapes)
         if y_hat_days.size > 1:
@@ -194,6 +156,7 @@ def video_level_inference_tflite(
         results["Predicted Gestational Age (Days)"].append(y_hat_days_scalar)
 
     return results
+
 
 def video_level_inference_tflite_fp(
     interpreter, dicomlist, outdir, sequence_length=None
@@ -214,7 +177,9 @@ def video_level_inference_tflite_fp(
         original_seq_length = frames_torch.shape[1]
 
         if sequence_length is not None and frames_torch.shape[1] > sequence_length:
-            indices = np.linspace(0, frames_torch.shape[1] - 1, sequence_length).astype(int)
+            indices = np.linspace(0, frames_torch.shape[1] - 1, sequence_length).astype(
+                int
+            )
             frames_torch = frames_torch[:, indices, :, :, :]
             original_seq_length = sequence_length
 
@@ -246,6 +211,7 @@ def video_level_inference_tflite_fp(
 
     return results
 
+
 def video_level_inference_tflite_efw(
     interpreter, dicomlist, outdir, sequence_length=None
 ):
@@ -268,7 +234,9 @@ def video_level_inference_tflite_efw(
         original_seq_length = frames_torch.shape[1]
 
         if sequence_length is not None and frames_torch.shape[1] > sequence_length:
-            indices = np.linspace(0, frames_torch.shape[1] - 1, sequence_length).astype(int)
+            indices = np.linspace(0, frames_torch.shape[1] - 1, sequence_length).astype(
+                int
+            )
             frames_torch = frames_torch[:, indices, :, :, :]
             original_seq_length = sequence_length
 
@@ -291,7 +259,9 @@ def video_level_inference_tflite_efw(
             outputs = np.expand_dims(outputs, 0)
 
         if outputs.size < 5:
-            raise ValueError("EFW TFLite model must output five values (AC, FL, HC, BPD, EFW).")
+            raise ValueError(
+                "EFW TFLite model must output five values (AC, FL, HC, BPD, EFW)."
+            )
 
         ac_pred, fl_pred, hc_pred, bpd_pred, efw_pred = outputs[:5]
 
@@ -325,7 +295,9 @@ def GA_TASK_tflite(args, dicomlist, lmean, lstd):
     """
     # Load TFLite model
     print("\n\n" + "=" * 80)
-    print(f"Loading TFLite model from: {args.tflite_dir} and model name {args.tflite_model_name}")
+    print(
+        f"Loading TFLite model from: {args.tflite_dir} and model name {args.tflite_model_name}"
+    )
     tflite_model_path = os.path.join(args.tflite_dir, args.tflite_model_name)
     if not os.path.exists(tflite_model_path):
         raise FileNotFoundError(f"TFLite model not found at: {tflite_model_path}")
@@ -334,17 +306,25 @@ def GA_TASK_tflite(args, dicomlist, lmean, lstd):
 
     # Run video-level inference
     results = video_level_inference_tflite(
-        interpreter, dicomlist, args.outdir, lmean=lmean, lstd=lstd, sequence_length=args.sequence_length
+        interpreter,
+        dicomlist,
+        args.outdir,
+        lmean=lmean,
+        lstd=lstd,
+        sequence_length=args.sequence_length,
     )
 
     return results
+
 
 def FP_TASK_tflite(args, dicomlist):
     """
     Perform the FP task inference using TFLite.
     """
     print("\n\n" + "=" * 80)
-    print(f"Loading FP TFLite model from: {args.tflite_dir} and model name {args.tflite_model_name}")
+    print(
+        f"Loading FP TFLite model from: {args.tflite_dir} and model name {args.tflite_model_name}"
+    )
     tflite_model_path = os.path.join(args.tflite_dir, args.tflite_model_name)
     if not os.path.exists(tflite_model_path):
         raise FileNotFoundError(f"TFLite model not found at: {tflite_model_path}")
@@ -357,12 +337,15 @@ def FP_TASK_tflite(args, dicomlist):
 
     return results
 
+
 def EFW_TASK_tflite(args, dicomlist):
     """
     Perform the EFW task inference using TFLite.
     """
     print("\n\n" + "=" * 80)
-    print(f"Loading EFW TFLite model from: {args.tflite_dir} and model name {args.tflite_model_name}")
+    print(
+        f"Loading EFW TFLite model from: {args.tflite_dir} and model name {args.tflite_model_name}"
+    )
     tflite_model_path = os.path.join(args.tflite_dir, args.tflite_model_name)
     if not os.path.exists(tflite_model_path):
         raise FileNotFoundError(f"TFLite model not found at: {tflite_model_path}")
@@ -374,6 +357,7 @@ def EFW_TASK_tflite(args, dicomlist):
     )
 
     return results
+
 
 def inference(args):
     """

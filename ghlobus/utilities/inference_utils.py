@@ -757,6 +757,7 @@ def video_level_inference(model: LightningModule,
                           lmean: float = LGA_MEAN,
                           lstd: float = LGA_STD,
                           physicalDeltaX: float = None,
+                          sequence_length: int | None = None,
                           ) -> dict:
     """
     Run inference on each set of `frames` individually and record the frame
@@ -790,6 +791,13 @@ def video_level_inference(model: LightningModule,
             print(
                 f"Skipping {dicompath} due to empty frames. Inspect video data for issues.")
             continue
+
+        frames = resample_frames(
+            frames, 
+            sequence_length=sequence_length, 
+            channels=frames.shape[2],
+            hw=(frames.shape[3], frames.shape[4]),
+        )
 
         # Step 4b. Perform inference on the data
         with torch.no_grad():
@@ -1159,3 +1167,44 @@ def yaml_to_dict(file_path: str) -> Any:
     """
     with open(file_path, 'r') as file:
         return yaml.safe_load(file)
+
+
+def resample_frames(
+    frames: torch.Tensor,
+    sequence_length: int | None = None,
+    channels: int = 3,
+    hw: tuple[int, int] = (256, 256),
+) -> torch.Tensor:
+    """Resample frames Tensor.
+
+    If we have too many frames, uniformly downsample to sequence length.
+    If we have too few frames, zero pad up to sequence length.
+
+    Args:
+        frames: Input pytorch tensor of frames
+        sequence_length: Desired sequence length for inference
+        channels: Input channels
+        hw: Height/width of inputs
+
+    Returns:
+        frames: [1, sequence_length, channels, hw[0], hw[1]] tensor, same dtype as input
+    """
+    if sequence_length is None:
+        return frames
+
+    original_seq_length = frames.shape[1]
+
+    if sequence_length is not None and frames.shape[1] > sequence_length:
+        indices = np.linspace(0, frames.shape[1] - 1, sequence_length).astype(int)
+        frames = frames[:, indices, :, :, :]
+
+    if sequence_length is not None and frames.shape[1] < sequence_length:
+        # Zero pad to the right length
+        pad_length = sequence_length - frames.shape[1]
+        pad_tensor = torch.zeros((1, pad_length, channels, *hw), dtype=frames.dtype)
+        frames = torch.cat((frames, pad_tensor), dim=1)
+
+    print(f"Resampled from {original_seq_length:,} to {sequence_length:,} frames.")
+    print(f"New input shape: {frames.shape}")
+
+    return frames
