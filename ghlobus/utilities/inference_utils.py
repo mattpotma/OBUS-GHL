@@ -863,6 +863,7 @@ def video_level_inference_FP(model: LightningModule,
                              lmean: float = LGA_MEAN,
                              lstd: float = LGA_STD,
                              physicalDeltaX: float = None,
+                             sequence_length: int | None = None,
                              ) -> dict:
     """
     Run inference on each set of `frames` individually and record the frame
@@ -895,6 +896,15 @@ def video_level_inference_FP(model: LightningModule,
         # Step 4a. Prepare the frame data from the DICOM for the model
         frames = get_dicom_frames(
             dicompath, model.device, mode='FP', pdx=physicalDeltaX)
+
+        frames = resample_frames(
+            frames, 
+            sequence_length=sequence_length, 
+            channels=frames.shape[2],
+            hw=(frames.shape[3], frames.shape[4]),
+        )
+
+        print(f"Frames shape: {frames.shape}")
 
         # Step 4b. Perform inference on the data
         with torch.no_grad():

@@ -15,5 +15,5 @@ uv run ghlobus/inference/tflite_inference.py --task=GA --tflite_dir=./tflite_mod
 export FP_CKPT=checkpoints/fp_experiment_e14.ckpt
 uv run ghlobus/export/tflite_export.py --task=FP --modelpath=$FP_CKPT --cnn_name=MobileNet_V2 --dicom=$DICOM --sequence_length=$SEQUENCE_LENGTH
 uv run ghlobus/inference/inference.py --task=FP --modelpath=$FP_CKPT --cnn_name=MobileNet_V2 --file=$DICOM --sequence_length=$SEQUENCE_LENGTH
-uv run ghlobus/inference/tflite_inference.py --task=FP --tflite_dir=./tflite_models --dicom=$DICOM --outdir=./test_tflite --tflite_model_name=ghlobus_fp_model_50.tflite
-uv run ghlobus/inference/tflite_inference.py --task=FP --tflite_dir=./tflite_models --dicom=$DICOM --outdir=./test_tflite --tflite_model_name=ghlobus_fp_model_opt_50.tflite
+uv run ghlobus/inference/tflite_inference.py --task=FP --tflite_dir=./tflite_models --dicom=$DICOM --outdir=./test_tflite --tflite_model_name=ghlobus_fp_model_50.tflite --sequence_length=$SEQUENCE_LENGTH
+uv run ghlobus/inference/tflite_inference.py --task=FP --tflite_dir=./tflite_models --dicom=$DICOM --outdir=./test_tflite --tflite_model_name=ghlobus_fp_model_opt_50.tflite --sequence_length=$SEQUENCE_LENGTH

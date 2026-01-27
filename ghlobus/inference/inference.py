@@ -149,6 +149,7 @@ def FP_TASK(args, dicomlist, lmean, lstd):
         args.save_vectors,
         lmean=lmean,
         lstd=lstd,
+        sequence_length=args.sequence_length,
     )
 
     # Step 5b. [Optional] Run exam-level inference for FP.
