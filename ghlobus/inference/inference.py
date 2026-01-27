@@ -195,6 +195,7 @@ def EFW_TASK(args, dicomlist):
         lmean=None,
         lstd=None,
         physicalDeltaX=args.pdx,
+        sequence_length=args.sequence_length,
     )
 
     # Step 5a. [Optional] Run exam-level inference for GA.
