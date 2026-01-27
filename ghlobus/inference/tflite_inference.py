@@ -91,7 +91,13 @@ def tflite_inference(interpreter, input_data, seq_length=None):
     # Run inference
     interpreter.invoke()
 
-    output_data = interpreter.get_tensor(output_details[0]["index"])
+    output_data = [
+        interpreter.get_tensor(output_details[i]["index"])
+        for i, _ in enumerate(output_details)
+    ]
+
+    if len(output_data) == 1:
+        output_data = output_data[0]
 
     end = time.time()
     print(f"TFLite inference time: {end - start:.4f} seconds")
@@ -174,32 +180,20 @@ def video_level_inference_tflite_fp(
         print(f"Processing: {dicompath}")
 
         frames_torch = get_dicom_frames(dicompath, device="cpu", mode="FP")
-        original_seq_length = frames_torch.shape[1]
 
-        if sequence_length is not None and frames_torch.shape[1] > sequence_length:
-            indices = np.linspace(0, frames_torch.shape[1] - 1, sequence_length).astype(
-                int
-            )
-            frames_torch = frames_torch[:, indices, :, :, :]
-            original_seq_length = sequence_length
-
-        if sequence_length is not None and frames_torch.shape[1] < sequence_length:
-            pad_length = sequence_length - frames_torch.shape[1]
-            pad_tensor = torch.zeros(
-                (1, pad_length, 3, 256, 256), dtype=frames_torch.dtype
-            )
-            frames_torch = torch.cat((frames_torch, pad_tensor), dim=1)
+        frames_torch = resample_frames(
+            frames_torch,
+            sequence_length=sequence_length,
+            channels=frames_torch.shape[2],
+            hw=(frames_torch.shape[3], frames_torch.shape[4]),
+        )
 
         frames_numpy = frames_torch.detach().cpu().numpy()
 
-        print(f"Input shape: {frames_numpy.shape}")
-        print(f"Original sequence length: {original_seq_length}")
+        probs = tflite_inference(interpreter, frames_numpy, frames_numpy.shape[0])[1]
+        probs = np.squeeze(probs)
 
-        logits = tflite_inference(interpreter, frames_numpy, original_seq_length)
-        logits = np.squeeze(logits)
-
-        probs = np.exp(logits - np.max(logits))
-        probs = probs / np.sum(probs)
+        print(probs)
         pred_idx = int(np.argmax(probs))
         pred_label = PRESENTATION_LABELS.get(pred_idx, str(pred_idx))
 
