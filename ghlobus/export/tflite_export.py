@@ -12,6 +12,7 @@ from ghlobus.utilities.inference_utils import (
     get_dicom_frames,
     load_Cnn2RnnRegressor_model,
     load_Cnn2RnnClassifier_model,
+    load_TWIN_model,
     enumerate_dicom_files,
     video_level_inference_FP,
     exam_level_inference_FP,
@@ -28,12 +29,13 @@ from ghlobus.utilities.inference_utils import (
     BPD_MEAN,
     BPD_STD,
 )
+from ghlobus.utilities.sample_utils import matern_subsample
 from ghlobus.models.BasicAdditiveAttention import BasicAdditiveAttention
 
 # Set default_model and default_dicom
 DEFAULT_DEVICE = "cpu"
 DEFAULT_OUTDIR = "./test_output/"
-ALLOWED_TASKS = ["GA", "GA_FRAMEWISE", "FP", "EFW"]
+ALLOWED_TASKS = ["GA", "GA_FRAMEWISE", "FP", "EFW", "TWIN"]
 
 
 class ModelWithRescaling(nn.Module):
@@ -264,6 +266,32 @@ class FPModelWrapper(nn.Module):
         return probs, pred
 
 
+class TWINModelWrapper(nn.Module):
+    """Wrapper that outputs (probabilities, prediction) for TWIN."""
+
+    def __init__(self, base_model):
+        super().__init__()
+        self.base_model = base_model
+
+    def forward(self, frames):
+        result = self.base_model(frames)
+
+        # Cnn2RnnClassifier returns (y_hat, frame_features, context, aux, logits)
+        if isinstance(result, (tuple, list)):
+            logits = result[4]
+        else:
+            logits = result
+
+        # Ensure shape (B, 2)
+        if logits.ndim == 1:
+            logits = logits.unsqueeze(0)
+
+        probs = torch.softmax(logits, dim=-1).to(torch.float32)  # (B,2)
+        pred = torch.argmax(probs, dim=-1).to(torch.int32)       # (B,)
+
+        return probs, pred
+
+
 
 def export(args):
     dicomlist = enumerate_dicom_files(args.dicom, args.examdir)
@@ -284,6 +312,8 @@ def export(args):
         return FP_TASK_EXPORT(args, dicomlist)
     if args.task == "EFW":
         return EFW_TASK_EXPORT(args, dicomlist)
+    if args.task == "TWIN":
+        return TWIN_TASK_EXPORT(args, dicomlist)
 
 
 def GA_TASK_EXPORT(args, dicomlist):
@@ -528,6 +558,80 @@ def EFW_TASK_EXPORT(args, dicomlist):
     print(f"Quantized TFLite EFW model saved to {quantized_tflite_filename}")
     return tflite_filename
 
+
+def TWIN_TASK_EXPORT(args, dicomlist):
+    """Export TWIN classifier to TFLite format."""
+    if len(dicomlist) != 6:
+        raise ValueError(
+            "For TWIN TFLite export, exactly 6 DICOM files must be provided. "
+            f"Found {len(dicomlist)} files."
+        )
+
+    base_model = load_TWIN_model(
+        args.modelpath,
+        args.device,
+        args.cnn_name,
+    )
+    model = TWINModelWrapper(base_model)
+    model.eval()
+    print(model)
+
+    print(
+        "Preparing exam-level frames for TWIN export with bag size "
+        f"{args.sequence_length}..."
+    )
+
+    exam_frames = []
+    for dicompath in dicomlist:
+        frames = get_dicom_frames(dicompath, device=args.device)
+
+        if frames.ndim == 5 and frames.shape[0] == 1:
+            frames = frames.squeeze(0)
+
+        exam_frames.append(frames)
+
+    all_frames = torch.cat(exam_frames, dim=0)
+    total_frames = all_frames.shape[0]
+
+    if total_frames >= args.sequence_length:
+        indices = matern_subsample(total_frames, k=args.sequence_length)
+        sampled_frames = all_frames[indices]
+    else:
+        pad_length = args.sequence_length - total_frames
+        c, h, w = all_frames.shape[1], all_frames.shape[2], all_frames.shape[3]
+        pad_tensor = torch.zeros(
+            (pad_length, c, h, w),
+            dtype=all_frames.dtype,
+            device=all_frames.device,
+        )
+        sampled_frames = torch.cat((all_frames, pad_tensor), dim=0)
+
+    sampled_frames = sampled_frames.unsqueeze(0)  # (1, bag_size, C, H, W)
+
+    edge_model = ai_edge_torch.convert(model, (sampled_frames,))
+    print(edge_model)
+    print("Exporting TWIN model...")
+
+    output_dir = Path("tflite_models")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    tflite_filename = output_dir / f"ghlobus_twin_model_{args.sequence_length}.tflite"
+    edge_model.export(str(tflite_filename))
+    print(f"TFLite TWIN model saved to {tflite_filename}")
+
+    print(f"Exporting TWIN model with optimization: {tf.lite.Optimize.DEFAULT}...")
+    quantized_model = ai_edge_torch.convert(
+        model,
+        (sampled_frames,),
+        _ai_edge_converter_flags={"optimizations": [tf.lite.Optimize.DEFAULT]},
+    )
+    quantized_tflite_filename = (
+        output_dir / f"ghlobus_twin_model_opt_{args.sequence_length}.tflite"
+    )
+    quantized_model.export(str(quantized_tflite_filename))
+    print(f"Quantized TFLite TWIN model saved to {quantized_tflite_filename}")
+    return tflite_filename
+
 def main():
     # Configure the ArgumentParser
     cli_description = (
@@ -539,7 +643,8 @@ def main():
         required=True,
         type=str,
         choices=ALLOWED_TASKS,
-        help="Task to perform: 'GA' (Gestational Age), 'FP' (Fetal Presentation) or 'EFW' (Estimated Fetal Weight).",
+        help="Task to perform: 'GA' (Gestational Age), 'FP' (Fetal Presentation), "
+        "'EFW' (Estimated Fetal Weight), or 'TWIN' (Multiple Gestation).",
     )
     parser.add_argument(
         "--modelpath",
