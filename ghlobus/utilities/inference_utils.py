@@ -200,10 +200,12 @@ def load_TWIN_model(modelpath: os.PathLike,
     # Set the .return_intermediates attribute to 'True', so that .forward() returns
     # all intermediate states of importance (feature vectors, context vectors, attention scores)
     model.report_intermediates = True
-
     # Set model to eval mode, and freeze weights
     model.eval()
     model.freeze()
+
+    return model
+
 
 
 
