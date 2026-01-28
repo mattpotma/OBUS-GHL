@@ -25,12 +25,14 @@ from ghlobus.utilities.inference_utils import (
     LGA_STD,
     resample_frames,
 )
+from ghlobus.utilities.sample_utils import matern_subsample
 
 # Set defaults
 DEFAULT_TFLITE_DIR = "./tflite_models/"
 DEFAULT_OUTDIR = "./test_output_tflite/"
-ALLOWED_TASKS = ["GA", "FP", "EFW"]
+ALLOWED_TASKS = ["GA", "FP", "EFW", "TWIN"]
 PRESENTATION_LABELS = {0: "cephalic", 1: "noncephalic"}
+DEFAULT_TWIN_BAG_SIZE = 1000
 
 
 def load_tflite_model(tflite_path: str):
@@ -274,6 +276,79 @@ def video_level_inference_tflite_efw(
     return results
 
 
+def exam_level_inference_tflite_twin(
+    interpreter, dicomlist, outdir, bag_size=None
+):
+    """
+    Run TFLite TWIN inference for a 6-video exam and return probs + pred.
+    """
+    if len(dicomlist) != 6:
+        raise ValueError(
+            "For TWIN TFLite inference, exactly 6 DICOM files must be provided. "
+            f"Found {len(dicomlist)} files."
+        )
+
+    exam_frames = []
+    for dicompath in dicomlist:
+        frames = get_dicom_frames(dicompath, device="cpu")
+        if frames.ndim == 5 and frames.shape[0] == 1:
+            frames = frames.squeeze(0)
+        exam_frames.append(frames)
+
+    all_frames = torch.cat(exam_frames, dim=0)
+    total_frames = all_frames.shape[0]
+
+    if bag_size is None:
+        bag_size = DEFAULT_TWIN_BAG_SIZE
+
+    if total_frames >= bag_size:
+        indices = matern_subsample(total_frames, k=bag_size)
+        sampled_frames = all_frames[indices]
+    else:
+        pad_length = bag_size - total_frames
+        c, h, w = all_frames.shape[1], all_frames.shape[2], all_frames.shape[3]
+        pad_tensor = torch.zeros(
+            (pad_length, c, h, w),
+            dtype=all_frames.dtype,
+        )
+        sampled_frames = torch.cat((all_frames, pad_tensor), dim=0)
+
+    sampled_frames = sampled_frames.unsqueeze(0)  # (1, bag_size, C, H, W)
+    frames_numpy = sampled_frames.detach().cpu().numpy()
+
+    outputs = tflite_inference(interpreter, frames_numpy)
+    if not isinstance(outputs, (list, tuple)) or len(outputs) == 0:
+        raise ValueError("TWIN TFLite model did not return any outputs.")
+
+    # Prefer the tensor that looks like probabilities (last dim == 2)
+    probs = None
+    for out in outputs:
+        arr = np.asarray(out)
+        if arr.ndim >= 1 and arr.shape[-1] == 2:
+            probs = arr
+            break
+
+    if probs is None:
+        raise ValueError(
+            "TWIN TFLite model must output a probabilities tensor with last dimension 2."
+        )
+
+    probs = np.squeeze(probs)
+    pred = int(np.argmax(probs))
+    pred_label = "Twin" if pred == 1 else "Singleton"
+
+    print(probs)
+    print(f"Predicted label: {pred_label} (prob={probs[pred]:.4f})")
+
+    results = {
+        "paths": [os.path.dirname(dicomlist[0])],
+        "Predicted label": [pred],
+        "Probabilities": [probs.tolist()],
+    }
+
+    return results
+
+
 def GA_TASK_tflite(args, dicomlist, lmean, lstd):
     """
     Perform the Gestational Age (GA) task inference using TFLite.
@@ -353,6 +428,30 @@ def EFW_TASK_tflite(args, dicomlist):
     return results
 
 
+def TWIN_TASK_tflite(args, dicomlist):
+    """
+    Perform the TWIN task inference using TFLite.
+    """
+    print("\n\n" + "=" * 80)
+    print(
+        f"Loading TWIN TFLite model from: {args.tflite_dir} and model name {args.tflite_model_name}"
+    )
+    tflite_model_path = os.path.join(args.tflite_dir, args.tflite_model_name)
+    if not os.path.exists(tflite_model_path):
+        raise FileNotFoundError(f"TFLite model not found at: {tflite_model_path}")
+
+    interpreter = load_tflite_model(tflite_model_path)
+
+    results = exam_level_inference_tflite_twin(
+        interpreter,
+        dicomlist,
+        args.outdir,
+        bag_size=args.sequence_length,
+    )
+
+    return results
+
+
 def inference(args):
     """
     Main inference function.
@@ -388,6 +487,8 @@ def inference(args):
         return FP_TASK_tflite(args, dicomlist)
     elif args.task == "EFW":
         return EFW_TASK_tflite(args, dicomlist)
+    elif args.task == "TWIN":
+        return TWIN_TASK_tflite(args, dicomlist)
     else:
         raise ValueError(f"Task {args.task} not supported in TFLite inference yet.")
 
@@ -402,7 +503,8 @@ def main():
         required=True,
         type=str,
         choices=ALLOWED_TASKS,
-        help="Task to perform: 'GA' (Gestational Age) or 'FP' (Fetal Presentation)",
+        help="Task to perform: 'GA' (Gestational Age), 'FP' (Fetal Presentation), "
+        "'EFW' (Estimated Fetal Weight), or 'TWIN' (Multiple Gestation)",
     )
     parser.add_argument(
         "--tflite_dir",

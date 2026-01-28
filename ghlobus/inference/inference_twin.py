@@ -89,6 +89,18 @@ def inference(args):
     print("Subsampling frames...")
     bag_size = args.bag_size
 
+    def pad_to_bag_size(frames: torch.Tensor, target_size: int) -> torch.Tensor:
+        """Pad frames to target_size with zeros along the frame dimension."""
+        if frames.shape[0] >= target_size:
+            return frames
+        pad_length = target_size - frames.shape[0]
+        pad_tensor = torch.zeros(
+            (pad_length, *frames.shape[1:]),
+            dtype=frames.dtype,
+            device=frames.device,
+        )
+        return torch.cat((frames, pad_tensor), dim=0)
+
     if args.frame_sampling == 'exam':
         print("Using exam-level frame sampling.")
         print("Concatenating all frames from all videos...")
@@ -101,8 +113,8 @@ def inference(args):
             f"Total frames before sampling: {total_frames} (exam shape {all_frames.shape})")
 
         if total_frames <= bag_size:
-            # If total frames are less than or equal to bag size, use all frames
-            sampled_frames = all_frames
+            # If total frames are less than or equal to bag size, pad to bag size
+            sampled_frames = pad_to_bag_size(all_frames, bag_size)
         else:
             # use Matern sampling to get separation between samples on the exam level
             indices = matern_subsample(all_frames.shape[0], k=args.bag_size)
@@ -117,8 +129,8 @@ def inference(args):
             total_frames = frames.shape[0]
 
             if total_frames <= bag_size:
-                # If total frames are less than or equal to bag size, use all frames
-                sampled = frames
+                # If total frames are less than or equal to bag size, pad to bag size
+                sampled = pad_to_bag_size(frames, bag_size)
             else:
                 # use Matern sampling to get separation between samples on the video level
                 indices = matern_subsample(frames.shape[0], k=args.bag_size)
