@@ -34,3 +34,14 @@ export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$(python3-config --prefix)/lib"
 
 #predictions on gates efw
 # uv run ghlobus/inference/inference.py --task=EFW --modelpath=checkpoints/efw_experiment_e56.ckpt --cnn_name=MobileNet_V2 --file=/home/ella/src/OBUS-GHL/dicoms/test.dcm
+
+# predictions on gates TWIN
+# uv run ghlobus/inference/inference_twin.py --modelpath=checkpoints/twin_iMIL_experiment_fold3_e10.ckpt --examdir=dicoms/lcp/patient6
+
+# preidctions on tflite TWIN
+# uv run ghlobus/inference/tflite_inference.py --task=TWIN --tflite_dir=./tflite_models --examdir=dicoms/lcp/patient6 --outdir=./test_tflite --tflite_model_name=ghlobus_twin_model_1000.tflite
+# uv run ghlobus/inference/tflite_inference.py --task=TWIN --tflite_dir=./tflite_models --examdir=dicoms/lcp/patient6 --outdir=./test_tflite --tflite_model_name=ghlobus_twin_model_opt_1000.tflite
+
+
+# export TWIN
+# uv run ghlobus/export/tflite_export.py --task=TWIN --modelpath=checkpoints/twin_iMIL_experiment_fold3_e10.ckpt --cnn_name=MobileNet_V2 --examdir=dicoms/lcp/patient6 --sequence_length=1000
