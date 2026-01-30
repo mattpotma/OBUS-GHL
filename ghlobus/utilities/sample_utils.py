@@ -196,6 +196,11 @@ def matern_subsample(n: int, k: int, r: int = 4, factor: float = 4) -> list:
     Returns:
         indcs: list      k subsampled indices as list
     """
+
+    #set seed
+    random.seed(1234)
+    np.random.seed(2345)
+
     # determine how many in base Poisson process
     n_base = min(int(math.ceil(factor * k)), n)
     # determine maximum value of r

@@ -23,7 +23,6 @@ from ghlobus.utilities.inference_utils import (
     get_dicom_frames,
     LGA_MEAN,
     LGA_STD,
-    resample_frames,
 )
 from ghlobus.utilities.sample_utils import matern_subsample
 
@@ -33,6 +32,45 @@ DEFAULT_OUTDIR = "./test_output_tflite/"
 ALLOWED_TASKS = ["GA", "FP", "EFW", "TWIN"]
 PRESENTATION_LABELS = {0: "cephalic", 1: "noncephalic"}
 DEFAULT_TWIN_BAG_SIZE = 1000
+DEFAULT_FRAME_SAMPLING = "uniform"
+DEFAULT_SEQUENCE_LENGTH = 50
+
+
+def resample_frames_with_strategy(
+    frames: torch.Tensor,
+    sequence_length: int | None = None,
+    frame_sampling: str = DEFAULT_FRAME_SAMPLING,
+) -> torch.Tensor:
+    """
+    Resample frames using the requested strategy when downsampling and zero-pad when upsampling.
+    """
+    if sequence_length is None:
+        return frames
+
+    original_seq_length = frames.shape[1]
+
+    if frames.shape[1] > sequence_length:
+        if frame_sampling == "matern":
+            indices = matern_subsample(frames.shape[1], k=sequence_length)
+        elif frame_sampling == "uniform":
+            indices = np.linspace(0, frames.shape[1] - 1, sequence_length).astype(int)
+        else:
+            raise ValueError(
+                f"Invalid frame_sampling argument {frame_sampling}. "
+                "Use 'uniform' or 'matern'."
+            )
+        frames = frames[:, indices, :, :, :]
+
+    if frames.shape[1] < sequence_length:
+        pad_length = sequence_length - frames.shape[1]
+        c, h, w = frames.shape[2], frames.shape[3], frames.shape[4]
+        pad_tensor = torch.zeros((1, pad_length, c, h, w), dtype=frames.dtype)
+        frames = torch.cat((frames, pad_tensor), dim=1)
+
+    print(f"Resampled from {original_seq_length:,} to {sequence_length:,} frames.")
+    print(f"New input shape: {frames.shape}")
+
+    return frames
 
 
 def load_tflite_model(tflite_path: str):
@@ -108,7 +146,13 @@ def tflite_inference(interpreter, input_data, seq_length=None):
 
 
 def video_level_inference_tflite(
-    interpreter, dicomlist, outdir, lmean=LGA_MEAN, lstd=LGA_STD, sequence_length=None
+    interpreter,
+    dicomlist,
+    outdir,
+    lmean=LGA_MEAN,
+    lstd=LGA_STD,
+    sequence_length=None,
+    frame_sampling=DEFAULT_FRAME_SAMPLING,
 ):
     """
     Run TFLite inference on each DICOM file individually.
@@ -136,11 +180,16 @@ def video_level_inference_tflite(
         frames_torch = get_dicom_frames(dicompath, device="cpu", mode="GA")
         # Input shape: (1, 110, 3, 256, 256)
 
-        frames_torch = resample_frames(
+        original_seq_length = frames_torch.shape[1]
+        frames_torch = resample_frames_with_strategy(
             frames_torch,
             sequence_length=sequence_length,
-            channels=frames_torch.shape[2],
-            hw=(frames_torch.shape[3], frames_torch.shape[4]),
+            frame_sampling=frame_sampling,
+        )
+        actual_seq_length = (
+            min(original_seq_length, sequence_length)
+            if sequence_length is not None
+            else original_seq_length
         )
 
         frames_numpy = (
@@ -148,9 +197,17 @@ def video_level_inference_tflite(
         )  # Keep original dtype (uint8)
 
         # Step 2: Run TFLite inference
-        y_hat_days = tflite_inference(interpreter, frames_numpy, frames_numpy.shape[0])
+        y_hat_days = tflite_inference(interpreter, frames_numpy, actual_seq_length)
 
         # Step 3: Extract scalar values (handle different output shapes)
+        if isinstance(y_hat_days, list):
+            scalar_candidate = None
+            for candidate in y_hat_days:
+                arr = np.asarray(candidate)
+                if arr.size == 1:
+                    scalar_candidate = arr
+                    break
+            y_hat_days = scalar_candidate if scalar_candidate is not None else np.asarray(y_hat_days[-1])
         if y_hat_days.size > 1:
             y_hat_days_scalar = float(np.mean(y_hat_days))
         else:
@@ -167,7 +224,11 @@ def video_level_inference_tflite(
 
 
 def video_level_inference_tflite_fp(
-    interpreter, dicomlist, outdir, sequence_length=None
+    interpreter,
+    dicomlist,
+    outdir,
+    sequence_length=None,
+    frame_sampling=DEFAULT_FRAME_SAMPLING,
 ):
     """
     Run TFLite FP inference on each DICOM file individually.
@@ -183,16 +244,21 @@ def video_level_inference_tflite_fp(
 
         frames_torch = get_dicom_frames(dicompath, device="cpu", mode="FP")
 
-        frames_torch = resample_frames(
+        original_seq_length = frames_torch.shape[1]
+        frames_torch = resample_frames_with_strategy(
             frames_torch,
             sequence_length=sequence_length,
-            channels=frames_torch.shape[2],
-            hw=(frames_torch.shape[3], frames_torch.shape[4]),
+            frame_sampling=frame_sampling,
+        )
+        actual_seq_length = (
+            min(original_seq_length, sequence_length)
+            if sequence_length is not None
+            else original_seq_length
         )
 
         frames_numpy = frames_torch.detach().cpu().numpy()
 
-        probs = tflite_inference(interpreter, frames_numpy, frames_numpy.shape[0])[1]
+        probs = tflite_inference(interpreter, frames_numpy, actual_seq_length)[1]
         probs = np.squeeze(probs)
 
         print(probs)
@@ -209,7 +275,11 @@ def video_level_inference_tflite_fp(
 
 
 def video_level_inference_tflite_efw(
-    interpreter, dicomlist, outdir, sequence_length=None
+    interpreter,
+    dicomlist,
+    outdir,
+    sequence_length=None,
+    frame_sampling=DEFAULT_FRAME_SAMPLING,
 ):
     """
     Run TFLite EFW inference on each DICOM file individually.
@@ -228,20 +298,13 @@ def video_level_inference_tflite_efw(
 
         frames_torch = get_dicom_frames(dicompath, device="cpu", mode="EFW")
         original_seq_length = frames_torch.shape[1]
-
-        if sequence_length is not None and frames_torch.shape[1] > sequence_length:
-            indices = np.linspace(0, frames_torch.shape[1] - 1, sequence_length).astype(
-                int
-            )
-            frames_torch = frames_torch[:, indices, :, :, :]
+        frames_torch = resample_frames_with_strategy(
+            frames_torch,
+            sequence_length=sequence_length,
+            frame_sampling=frame_sampling,
+        )
+        if sequence_length is not None and original_seq_length > sequence_length:
             original_seq_length = sequence_length
-
-        if sequence_length is not None and frames_torch.shape[1] < sequence_length:
-            pad_length = sequence_length - frames_torch.shape[1]
-            pad_tensor = torch.zeros(
-                (1, pad_length, 3, 256, 256), dtype=frames_torch.dtype
-            )
-            frames_torch = torch.cat((frames_torch, pad_tensor), dim=1)
 
         frames_numpy = frames_torch.detach().cpu().numpy()
 
@@ -381,6 +444,7 @@ def GA_TASK_tflite(args, dicomlist, lmean, lstd):
         lmean=lmean,
         lstd=lstd,
         sequence_length=args.sequence_length,
+        frame_sampling=args.frame_sampling,
     )
 
     return results
@@ -401,7 +465,11 @@ def FP_TASK_tflite(args, dicomlist):
     interpreter = load_tflite_model(tflite_model_path)
 
     results = video_level_inference_tflite_fp(
-        interpreter, dicomlist, args.outdir, sequence_length=args.sequence_length
+        interpreter,
+        dicomlist,
+        args.outdir,
+        sequence_length=args.sequence_length,
+        frame_sampling=args.frame_sampling,
     )
 
     return results
@@ -422,7 +490,11 @@ def EFW_TASK_tflite(args, dicomlist):
     interpreter = load_tflite_model(tflite_model_path)
 
     results = video_level_inference_tflite_efw(
-        interpreter, dicomlist, args.outdir, sequence_length=args.sequence_length
+        interpreter,
+        dicomlist,
+        args.outdir,
+        sequence_length=args.sequence_length,
+        frame_sampling=args.frame_sampling,
     )
 
     return results
@@ -470,17 +542,30 @@ def inference(args):
         args.outdir, False, False
     )  # No vector/plot saving for TFLite
 
-    # Step 3: Validate task
+    # Step 3: Apply frame mode overrides, if provided
+    if args.frame_mode is not None:
+        if args.frame_mode == "full":
+            args.sequence_length = None
+        elif args.frame_mode == "uniform_50":
+            args.sequence_length = DEFAULT_SEQUENCE_LENGTH
+            args.frame_sampling = "uniform"
+        elif args.frame_mode == "matern_50":
+            args.sequence_length = DEFAULT_SEQUENCE_LENGTH
+            args.frame_sampling = "matern"
+        else:
+            raise ValueError(f"Invalid frame_mode argument {args.frame_mode}")
+
+    # Step 4: Validate task
     if args.task not in ALLOWED_TASKS:
         raise ValueError(
             f"Task {args.task} not recognized. "
             f"Please use one of the following: {ALLOWED_TASKS}."
         )
 
-    # Step 4: Get normalization constants
+    # Step 5: Get normalization constants
     print(f"Using hard-coded log_GA mean {LGA_MEAN} and std {LGA_STD}.")
 
-    # Step 5: Perform task-specific inference
+    # Step 6: Perform task-specific inference
     if args.task == "GA":
         return GA_TASK_tflite(args, dicomlist, LGA_MEAN, LGA_STD)
     elif args.task == "FP":
@@ -530,6 +615,21 @@ def main():
         default=None,
         type=int,
         help="Optional sequence length to pad/truncate input frames to. Default is None (use all frames).",
+    )
+    parser.add_argument(
+        "--frame_sampling",
+        default=DEFAULT_FRAME_SAMPLING,
+        choices=["uniform", "matern"],
+        type=str,
+        help="Frame downsampling strategy to use when sequence_length is set.",
+    )
+    parser.add_argument(
+        "--frame_mode",
+        default=None,
+        choices=["full", "uniform_50", "matern_50"],
+        type=str,
+        help="Convenience mode for frame selection: full sequence, uniform 50, or Matern 50. "
+        "Overrides --sequence_length and --frame_sampling when provided.",
     )
 
     # Specify the input options for the input files or directories.
